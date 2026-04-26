@@ -19,6 +19,8 @@ except ImportError:  # Development machines usually do not have RPi.GPIO.
     GPIO = None
 
 DEFAULT_CONFIG_PATH = "config.toml"
+WAVESHARE_RPI_RELAY_CH1_BCM_PIN = 26
+WAVESHARE_RPI_RELAY_ACTIVE_HIGH = False
 
 
 @dataclass(frozen=True)
@@ -60,8 +62,10 @@ class ControlConfig:
             cooling_on_c=float(temperature.get("cooling_on_c", 25.5)),
             cooling_off_c=float(temperature.get("cooling_off_c", 25.0)),
             interval_seconds=int(control.get("interval_seconds", 60)),
-            relay_pin=int(relay.get("pin", 25)),
-            relay_active_high=bool(relay.get("active_high", True)),
+            relay_pin=int(relay.get("pin", WAVESHARE_RPI_RELAY_CH1_BCM_PIN)),
+            relay_active_high=bool(
+                relay.get("active_high", WAVESHARE_RPI_RELAY_ACTIVE_HIGH)
+            ),
             sensor_id=sensor.get("id") or None,
         )
 
