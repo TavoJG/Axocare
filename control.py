@@ -83,6 +83,7 @@ class Relay:
         self.is_on = False
 
         GPIO.setmode(GPIO.BCM)
+        GPIO.cleanup(self.pin)
         GPIO.setup(self.pin, GPIO.OUT, initial=self._gpio_level(False))
 
     def set(self, enabled: bool) -> None:
