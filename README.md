@@ -90,6 +90,38 @@ Open:
 http://<pi-ip>:8501
 ```
 
+## NGINX HTTP Proxy
+
+To serve the dashboard over plain HTTP on port 80, keep the Streamlit dashboard
+running on localhost port 8501 and proxy NGINX to it.
+
+Install NGINX:
+
+```bash
+sudo apt install nginx
+```
+
+Copy the included site config:
+
+```bash
+sudo cp deploy/nginx/axocare-dashboard.conf /etc/nginx/sites-available/axocare-dashboard
+sudo ln -s /etc/nginx/sites-available/axocare-dashboard /etc/nginx/sites-enabled/axocare-dashboard
+sudo rm -f /etc/nginx/sites-enabled/default
+```
+
+Test and reload NGINX:
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Open:
+
+```text
+http://<pi-ip>
+```
+
 ## Systemd Services
 
 Create `/etc/systemd/system/axocare-control.service`:
