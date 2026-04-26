@@ -1,0 +1,17 @@
+[database]
+path = "axocare.db"
+
+[temperature]
+cooling_off_c = 18.0
+cooling_on_c = 18.6
+target_c = 18.0
+
+[control]
+interval_seconds = 60
+
+[relay]
+active_high = true
+pin = 25
+
+[sensor]
+id = ""
