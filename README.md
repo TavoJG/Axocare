@@ -116,6 +116,20 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
+If the page shows Streamlit skeleton placeholders forever, update the dashboard
+service so Streamlit knows the public browser URL is port 80:
+
+```ini
+ExecStart=/home/pi/axocare/.venv/bin/streamlit run dashboard.py --server.address 0.0.0.0 --server.port 8501 --browser.serverAddress <pi-ip> --browser.serverPort 80
+```
+
+Then restart the dashboard:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart axocare-dashboard
+```
+
 Open:
 
 ```text
