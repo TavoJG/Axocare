@@ -10,7 +10,6 @@ import streamlit as st
 
 import db
 
-
 DEFAULT_CONFIG_PATH = "config.toml"
 
 

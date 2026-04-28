@@ -1,11 +1,15 @@
 black==26.3.1
 click==8.3.3
+fastapi==0.135.3
 isort==8.0.1
 mypy_extensions==1.1.0
 packaging==26.2
 pathspec==1.1.0
 platformdirs==4.9.6
+httpx==0.28.1
+pytest==9.0.3
 pytokens==0.4.1
 pandas==2.3.3
 streamlit==1.52.2
+uvicorn==0.43.0
 w1thermsensor==2.3.0

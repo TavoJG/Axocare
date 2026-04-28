@@ -78,7 +78,31 @@ Run one local dry-run cycle without GPIO or a real sensor:
 python control.py --config config.toml --dry-run --once --dry-run-temperature 18.7
 ```
 
-Start the dashboard:
+Start the FastAPI dashboard API:
+
+```bash
+uvicorn api:app --host 0.0.0.0 --port 8000
+```
+
+Open the interactive API docs:
+
+```text
+http://<pi-ip>:8000/docs
+```
+
+The main frontend-oriented endpoints are:
+
+- `GET /api/dashboard?span_minutes=60`
+- `GET /api/current`
+- `GET /api/temperature-readings?span_minutes=60`
+- `GET /api/relay-events?limit=50`
+- `GET /health`
+
+Set `AXOCARE_CONFIG=/path/to/config.toml` to load a non-default config file.
+Set `AXOCARE_CORS_ORIGINS=http://localhost:3000,http://<pi-ip>` to restrict
+browser origins for a frontend. By default, the API allows all origins.
+
+The old Streamlit dashboard can still be started while the frontend migrates:
 
 ```bash
 streamlit run dashboard.py --server.address 0.0.0.0 --server.port 8501
@@ -155,7 +179,25 @@ User=pi
 WantedBy=multi-user.target
 ```
 
-Create `/etc/systemd/system/axocare-dashboard.service`:
+Create `/etc/systemd/system/axocare-api.service`:
+
+```ini
+[Unit]
+Description=Axocare Dashboard API
+After=network.target
+
+[Service]
+WorkingDirectory=/home/pi/axocare
+ExecStart=/home/pi/axocare/.venv/bin/uvicorn api:app --host 0.0.0.0 --port 8000
+Restart=always
+User=pi
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Or, while migrating, create `/etc/systemd/system/axocare-dashboard.service` for
+the old Streamlit dashboard:
 
 ```ini
 [Unit]
@@ -177,14 +219,14 @@ Enable and start both services:
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now axocare-control
-sudo systemctl enable --now axocare-dashboard
+sudo systemctl enable --now axocare-api
 ```
 
 Check logs:
 
 ```bash
 journalctl -u axocare-control -f
-journalctl -u axocare-dashboard -f
+journalctl -u axocare-api -f
 ```
 
 ## Database

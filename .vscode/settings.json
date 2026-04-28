@@ -1,3 +1,4 @@
 {
-  "cSpell.words": ["thermsensor", "WAVESHARE"]
+  "cSpell.words": ["axocare", "thermsensor", "WAVESHARE"],
+  "python-envs.defaultEnvManager": "ms-python.python:pyenv"
 }

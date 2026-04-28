@@ -147,14 +147,12 @@ def latest_temperature(
 ) -> sqlite3.Row | None:
     """Return the newest temperature reading, if one exists."""
     with connect(db_path) as conn:
-        return conn.execute(
-            """
+        return conn.execute("""
             SELECT id, recorded_at, temperature_c, relay_on, sensor_id, error
             FROM temperature_readings
             ORDER BY recorded_at DESC, id DESC
             LIMIT 1
-            """
-        ).fetchone()
+            """).fetchone()
 
 
 def temperatures_since(
