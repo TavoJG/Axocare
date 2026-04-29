@@ -17,7 +17,9 @@ from axocare_api.schemas import (
 from axocare_api.serializers import relay_event, temperature_reading
 from axocare_api.settings import DEFAULT_HISTORY_MINUTES, DEFAULT_LIMIT, ApiSettings
 
-router = APIRouter()
+router = APIRouter(
+    prefix="/api",
+)
 
 
 def settings(request: Request) -> ApiSettings:
@@ -45,7 +47,7 @@ def health(api_settings: ApiSettings = Depends(settings)) -> HealthResponse:
 
 
 @router.get(
-    "/api/current",
+    "/current",
     response_model=CurrentReadingResponse,
     tags=["dashboard"],
 )
@@ -60,7 +62,7 @@ def current_reading(
 
 
 @router.get(
-    "/api/temperature-readings",
+    "/temperature-readings",
     response_model=TemperatureHistoryResponse,
     tags=["dashboard"],
 )
@@ -81,7 +83,7 @@ def temperature_readings(
 
 
 @router.get(
-    "/api/relay-events",
+    "/relay-events",
     response_model=RelayEventsResponse,
     tags=["dashboard"],
 )
@@ -99,7 +101,7 @@ def relay_events(
 
 
 @router.get(
-    "/api/dashboard",
+    "/dashboard",
     response_model=DashboardResponse,
     tags=["dashboard"],
 )

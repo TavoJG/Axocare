@@ -32,6 +32,7 @@ def create_app(config_path: str | Path | None = None) -> FastAPI:
         summary="JSON API for Axocare temperature dashboard data.",
         version="1.0.0",
         lifespan=lifespan,
+        docs_url="/api/docs",
     )
     _configure_cors(app)
     app.include_router(router)
