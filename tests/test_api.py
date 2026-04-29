@@ -12,7 +12,7 @@ def test_health_and_empty_current_reading(tmp_path: Path) -> None:
     db_path = tmp_path / "empty.db"
 
     with TestClient(create_app(_write_config(tmp_path, db_path))) as client:
-        health = client.get("/health")
+        health = client.get("/api/health")
         current = client.get("/api/current")
 
     assert health.status_code == 200
@@ -141,6 +141,16 @@ def test_cors_allows_configured_origin(tmp_path: Path, monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://frontend.test"
+
+
+def test_openapi_schema_is_served_under_api_prefix(tmp_path: Path) -> None:
+    db_path = tmp_path / "openapi.db"
+
+    with TestClient(create_app(_write_config(tmp_path, db_path))) as client:
+        response = client.get("/api/openapi.json")
+
+    assert response.status_code == 200
+    assert response.json()["openapi"].startswith("3.")
 
 
 def _write_config(tmp_path: Path, db_path: Path) -> Path:

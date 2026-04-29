@@ -87,7 +87,7 @@ uvicorn api:app --host 0.0.0.0 --port 8000
 Open the interactive API docs:
 
 ```text
-http://<pi-ip>:8000/docs
+http://<pi-ip>:8000/api/docs
 ```
 
 The main frontend-oriented endpoints are:
@@ -96,7 +96,7 @@ The main frontend-oriented endpoints are:
 - `GET /api/current`
 - `GET /api/temperature-readings?span_minutes=60`
 - `GET /api/relay-events?limit=50`
-- `GET /health`
+- `GET /api/health`
 
 Set `AXOCARE_CONFIG=/path/to/config.toml` to load a non-default config file.
 Set `AXOCARE_CORS_ORIGINS=http://localhost:3000,http://<pi-ip>` to restrict

@@ -33,6 +33,7 @@ def create_app(config_path: str | Path | None = None) -> FastAPI:
         version="1.0.0",
         lifespan=lifespan,
         docs_url="/api/docs",
+        openapi_url="/api/openapi.json",
     )
     _configure_cors(app)
     app.include_router(router)
