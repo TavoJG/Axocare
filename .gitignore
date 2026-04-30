@@ -1,2 +1,3 @@
 __pycache__/
 *.db
+frontend/node_modules/

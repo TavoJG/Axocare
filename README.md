@@ -2,7 +2,8 @@
 
 Axocare is a Raspberry Pi aquarium temperature controller. It reads a DS18B20
 temperature sensor, switches a cooling relay through GPIO, stores readings in
-SQLite, and exposes a Streamlit dashboard for recent temperature history.
+SQLite, exposes a FastAPI JSON API, and serves a Vite/TypeScript dashboard for
+recent temperature history.
 
 ## Hardware
 
@@ -84,6 +85,34 @@ Start the FastAPI dashboard API:
 uvicorn api:app --host 0.0.0.0 --port 8000
 ```
 
+Start the Vite dashboard during development:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open:
+
+```text
+http://<pi-ip>:5173
+```
+
+Vite proxies `/api` requests to `http://127.0.0.1:8000`. For a backend hosted
+elsewhere, set `VITE_API_BASE` before building or running the dashboard:
+
+```bash
+VITE_API_BASE=http://<pi-ip>:8000 npm run dev
+```
+
+Build the production dashboard:
+
+```bash
+cd frontend
+npm run build
+```
+
 Open the interactive API docs:
 
 ```text
@@ -99,7 +128,7 @@ The main frontend-oriented endpoints are:
 - `GET /api/health`
 
 Set `AXOCARE_CONFIG=/path/to/config.toml` to load a non-default config file.
-Set `AXOCARE_CORS_ORIGINS=http://localhost:3000,http://<pi-ip>` to restrict
+Set `AXOCARE_CORS_ORIGINS=http://localhost:5173,http://<pi-ip>` to restrict
 browser origins for a frontend. By default, the API allows all origins.
 
 The old Streamlit dashboard can still be started while the frontend migrates:
@@ -116,13 +145,23 @@ http://<pi-ip>:8501
 
 ## NGINX HTTP Proxy
 
-To serve the dashboard over plain HTTP on port 80, keep the Streamlit dashboard
-running on localhost port 8501 and proxy NGINX to it.
+To serve the dashboard over plain HTTP on port 80, build the Vite dashboard and
+proxy only the API to FastAPI. The included NGINX config serves
+`/home/pi/axocare/frontend/dist` and forwards `/api/` to
+`http://127.0.0.1:8000`.
 
 Install NGINX:
 
 ```bash
 sudo apt install nginx
+```
+
+Build the frontend on the Raspberry Pi:
+
+```bash
+cd /home/pi/axocare/frontend
+npm install
+npm run build
 ```
 
 Copy the included site config:
@@ -138,20 +177,6 @@ Test and reload NGINX:
 ```bash
 sudo nginx -t
 sudo systemctl reload nginx
-```
-
-If the page shows Streamlit skeleton placeholders forever, update the dashboard
-service so Streamlit knows the public browser URL is port 80:
-
-```ini
-ExecStart=/home/pi/axocare/.venv/bin/streamlit run dashboard.py --server.address 0.0.0.0 --server.port 8501 --browser.serverAddress <pi-ip> --browser.serverPort 80
-```
-
-Then restart the dashboard:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl restart axocare-dashboard
 ```
 
 Open:
@@ -196,22 +221,18 @@ User=pi
 WantedBy=multi-user.target
 ```
 
-Or, while migrating, create `/etc/systemd/system/axocare-dashboard.service` for
-the old Streamlit dashboard:
+Create `/etc/systemd/system/axocare-dashboard-build.service` if you want a
+manual systemd unit for rebuilding the static dashboard after updates:
 
 ```ini
 [Unit]
-Description=Axocare Streamlit Dashboard
-After=network.target
+Description=Build Axocare Vite Dashboard
 
 [Service]
-WorkingDirectory=/home/pi/axocare
-ExecStart=/home/pi/axocare/.venv/bin/streamlit run dashboard.py --server.address 0.0.0.0 --server.port 8501
-Restart=always
+Type=oneshot
+WorkingDirectory=/home/pi/axocare/frontend
+ExecStart=/usr/bin/npm run build
 User=pi
-
-[Install]
-WantedBy=multi-user.target
 ```
 
 Enable and start both services:
