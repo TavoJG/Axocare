@@ -101,8 +101,10 @@ app.innerHTML = `
           </div>
           <p id="lastUpdated" class="muted"></p>
         </div>
-        <div id="chartEmpty" class="empty" hidden>No readings found for this time span.</div>
-        <canvas id="temperatureChart" aria-label="Temperature history chart"></canvas>
+        <div class="chart-frame">
+          <div id="chartEmpty" class="empty" hidden>No readings found for this time span.</div>
+          <canvas id="temperatureChart" aria-label="Temperature history chart"></canvas>
+        </div>
       </section>
 
       <section class="split">
