@@ -59,6 +59,7 @@ def test_dashboard_returns_current_history_and_relay_events(tmp_path: Path) -> N
         "target_c": 18.0,
         "cooling_on_c": 18.6,
         "cooling_off_c": 18.0,
+        "notification_threshold_c": 20.0,
         "interval_seconds": 60,
     }
     assert payload["current"] == {
@@ -164,6 +165,7 @@ path = "{db_path}"
 target_c = 18.0
 cooling_on_c = 18.6
 cooling_off_c = 18.0
+notification_threshold_c = 20.0
 
 [control]
 interval_seconds = 60

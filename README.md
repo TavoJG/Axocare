@@ -47,6 +47,7 @@ path = "axocare.db"
 target_c = 18.0
 cooling_on_c = 18.6
 cooling_off_c = 18.0
+notification_threshold_c = 20.0
 
 [control]
 interval_seconds = 60
@@ -57,11 +58,22 @@ active_high = false
 
 [sensor]
 id = ""
+
+[pushover]
+app_token = ""
+user_key = ""
+title = "Axocare temperature alert"
 ```
 
 The controller turns the relay on when temperature is greater than or equal to
 `cooling_on_c`, turns it off when temperature is less than or equal to
 `cooling_off_c`, and keeps the previous relay state between those values.
+
+Set `temperature.notification_threshold_c` to send a Pushover alert when the
+temperature is greater than that value. The alert is sent once per high
+temperature excursion and resets after the temperature returns to or below the
+threshold. Add your Pushover application token and user key under `[pushover]`,
+or provide them with `PUSHOVER_APP_TOKEN` and `PUSHOVER_USER_KEY`.
 
 Leave `sensor.id` empty to use the first detected DS18B20 sensor.
 

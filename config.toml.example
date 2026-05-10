@@ -4,6 +4,7 @@ path = "axocare.db"
 [temperature]
 cooling_off_c = 18.0
 cooling_on_c = 18.6
+notification_threshold_c = 20.0
 target_c = 18.0
 
 [control]
@@ -15,3 +16,8 @@ pin = 26
 
 [sensor]
 id = ""
+
+[pushover]
+app_token = ""
+title = "Axocare temperature alert"
+user_key = ""

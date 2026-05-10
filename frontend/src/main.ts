@@ -44,6 +44,7 @@ type ApiSettings = {
   target_c: number;
   cooling_on_c: number;
   cooling_off_c: number;
+  notification_threshold_c: number | null;
   interval_seconds: number;
 };
 
@@ -209,6 +210,7 @@ function renderStatus(payload: DashboardResponse): void {
     ${metricCard("Target", formatTemperature(settings.target_c), "")}
     ${metricCard("Cooling on", formatTemperature(settings.cooling_on_c), "")}
     ${metricCard("Cooling off", formatTemperature(settings.cooling_off_c), "")}
+    ${metricCard("Notify above", formatTemperature(settings.notification_threshold_c), "")}
   `;
 
   if (current?.error) {
@@ -225,6 +227,11 @@ function renderChart(payload: DashboardResponse): void {
   const target = payload.readings.map(() => payload.settings.target_c);
   const coolingOn = payload.readings.map(() => payload.settings.cooling_on_c);
   const coolingOff = payload.readings.map(() => payload.settings.cooling_off_c);
+  const threshold = payload.settings.notification_threshold_c;
+  const notificationThreshold =
+    threshold == null
+      ? null
+      : payload.readings.map(() => threshold);
 
   chartEmpty.hidden = payload.readings.length > 0;
   chartCanvas.hidden = payload.readings.length === 0;
@@ -241,6 +248,15 @@ function renderChart(payload: DashboardResponse): void {
     state.chart.data.datasets[1].data = target;
     state.chart.data.datasets[2].data = coolingOn;
     state.chart.data.datasets[3].data = coolingOff;
+    if (notificationThreshold == null) {
+      state.chart.data.datasets = state.chart.data.datasets.slice(0, 4);
+    } else if (state.chart.data.datasets[4]) {
+      state.chart.data.datasets[4].data = notificationThreshold;
+    } else {
+      state.chart.data.datasets.push(
+        thresholdDataset("Notify above", notificationThreshold, "#7c3aed")
+      );
+    }
     state.chart.update();
     return;
   }
@@ -263,7 +279,10 @@ function renderChart(payload: DashboardResponse): void {
         },
         thresholdDataset("Target", target, "#2563eb"),
         thresholdDataset("Cooling on", coolingOn, "#dc2626"),
-        thresholdDataset("Cooling off", coolingOff, "#f59e0b")
+        thresholdDataset("Cooling off", coolingOff, "#f59e0b"),
+        ...(notificationThreshold == null
+          ? []
+          : [thresholdDataset("Notify above", notificationThreshold, "#7c3aed")])
       ]
     },
     options: {

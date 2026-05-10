@@ -21,6 +21,7 @@ class ApiSettings(BaseModel):
     target_c: float
     cooling_on_c: float
     cooling_off_c: float
+    notification_threshold_c: float | None
     interval_seconds: int
 
     @classmethod
@@ -37,5 +38,15 @@ class ApiSettings(BaseModel):
             target_c=float(temperature.get("target_c", 25.0)),
             cooling_on_c=float(temperature.get("cooling_on_c", 25.5)),
             cooling_off_c=float(temperature.get("cooling_off_c", 25.0)),
+            notification_threshold_c=_optional_float(
+                temperature.get("notification_threshold_c")
+            ),
             interval_seconds=int(control.get("interval_seconds", 60)),
         )
+
+
+def _optional_float(value) -> float | None:
+    """Return a float for configured values while treating blanks as disabled."""
+    if value is None or value == "":
+        return None
+    return float(value)

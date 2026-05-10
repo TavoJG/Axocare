@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import signal
 import sys
 import time
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
+from urllib import error, parse, request
 
 import db
 
@@ -40,10 +43,14 @@ class ControlConfig:
     target_c: float
     cooling_on_c: float
     cooling_off_c: float
+    notification_threshold_c: float | None
     interval_seconds: int
     relay_pin: int
     relay_active_high: bool
     sensor_id: str | None
+    pushover_app_token: str | None
+    pushover_user_key: str | None
+    pushover_title: str
 
     @classmethod
     def from_toml(cls, config_path: str | Path) -> "ControlConfig":
@@ -55,19 +62,95 @@ class ControlConfig:
         control = values.get("control", {})
         relay = values.get("relay", {})
         sensor = values.get("sensor", {})
+        pushover = values.get("pushover", {})
 
         return cls(
             db_path=str(database.get("path", db.DEFAULT_DB_PATH)),
             target_c=float(temperature.get("target_c", 25.0)),
             cooling_on_c=float(temperature.get("cooling_on_c", 25.5)),
             cooling_off_c=float(temperature.get("cooling_off_c", 25.0)),
+            notification_threshold_c=_optional_float(
+                temperature.get("notification_threshold_c")
+            ),
             interval_seconds=int(control.get("interval_seconds", 60)),
             relay_pin=int(relay.get("pin", WAVESHARE_RPI_RELAY_CH1_BCM_PIN)),
             relay_active_high=bool(
                 relay.get("active_high", WAVESHARE_RPI_RELAY_ACTIVE_HIGH)
             ),
             sensor_id=sensor.get("id") or None,
+            pushover_app_token=_optional_str(
+                pushover.get("app_token") or os.getenv("PUSHOVER_APP_TOKEN")
+            ),
+            pushover_user_key=_optional_str(
+                pushover.get("user_key") or os.getenv("PUSHOVER_USER_KEY")
+            ),
+            pushover_title=str(pushover.get("title") or "Axocare temperature alert"),
         )
+
+
+@dataclass
+class TemperatureNotificationState:
+    """Tracks whether the high-temperature notification is already active."""
+
+    active: bool = False
+
+
+class TemperatureNotifier(Protocol):
+    """Notifier interface used by the controller loop."""
+
+    def notify_temperature_high(
+        self,
+        *,
+        temperature_c: float,
+        threshold_c: float,
+        sensor_id: str | None,
+    ) -> None:
+        """Send a high-temperature notification."""
+
+
+class PushoverNotifier:
+    """Small Pushover client for controller alerts."""
+
+    API_URL = "https://api.pushover.net/1/messages.json"
+
+    def __init__(self, *, app_token: str, user_key: str, title: str) -> None:
+        self.app_token = app_token
+        self.user_key = user_key
+        self.title = title
+
+    def notify_temperature_high(
+        self,
+        *,
+        temperature_c: float,
+        threshold_c: float,
+        sensor_id: str | None,
+    ) -> None:
+        message = (
+            f"Temperature is {temperature_c:.2f} C, above the "
+            f"{threshold_c:.2f} C notification threshold."
+        )
+        if sensor_id:
+            message = f"{message} Sensor: {sensor_id}."
+
+        payload = parse.urlencode(
+            {
+                "token": self.app_token,
+                "user": self.user_key,
+                "title": self.title,
+                "message": message,
+            }
+        ).encode("utf-8")
+        pushover_request = request.Request(
+            self.API_URL,
+            data=payload,
+            method="POST",
+        )
+
+        try:
+            with request.urlopen(pushover_request, timeout=10) as response:
+                response.read()
+        except error.URLError as exc:
+            raise RuntimeError(f"Pushover notification failed: {exc}") from exc
 
 
 class Relay:
@@ -147,6 +230,59 @@ def next_relay_state(
     return current_on, None
 
 
+def create_notifier(config: ControlConfig) -> TemperatureNotifier | None:
+    """Create a configured notification client, if alerting is enabled."""
+    if config.notification_threshold_c is None:
+        return None
+
+    if not config.pushover_app_token or not config.pushover_user_key:
+        logging.warning(
+            "temperature notification threshold is configured, but Pushover "
+            "credentials are missing"
+        )
+        return None
+
+    return PushoverNotifier(
+        app_token=config.pushover_app_token,
+        user_key=config.pushover_user_key,
+        title=config.pushover_title,
+    )
+
+
+def maybe_notify_temperature(
+    reading: SensorReading,
+    *,
+    config: ControlConfig,
+    notifier: TemperatureNotifier | None,
+    notification_state: TemperatureNotificationState,
+) -> None:
+    """Send one notification per high-temperature excursion."""
+    threshold_c = config.notification_threshold_c
+    temperature_c = reading.temperature_c
+
+    if threshold_c is None or notifier is None or temperature_c is None:
+        return
+
+    if temperature_c <= threshold_c:
+        notification_state.active = False
+        return
+
+    if notification_state.active:
+        return
+
+    try:
+        notifier.notify_temperature_high(
+            temperature_c=temperature_c,
+            threshold_c=threshold_c,
+            sensor_id=reading.sensor_id,
+        )
+    except Exception:
+        logging.exception("temperature notification failed")
+        return
+
+    notification_state.active = True
+
+
 def control_once(
     relay: Relay | None,
     *,
@@ -155,6 +291,8 @@ def control_once(
     config: ControlConfig,
     dry_run_temperature: float | None,
     db_path: str | Path,
+    notifier: TemperatureNotifier | None = None,
+    notification_state: TemperatureNotificationState | None = None,
 ) -> bool:
     """Run one control cycle and persist the reading plus any relay transition."""
     reading = read_temperature(sensor, dry_run_temperature)
@@ -183,6 +321,14 @@ def control_once(
             db_path=db_path,
         )
 
+    if notification_state is not None:
+        maybe_notify_temperature(
+            reading,
+            config=config,
+            notifier=notifier,
+            notification_state=notification_state,
+        )
+
     logging.info(
         "temperature=%s relay_on=%s error=%s",
         reading.temperature_c,
@@ -202,6 +348,8 @@ def run(
     """Run the controller loop until interrupted or for one iteration."""
     config = ControlConfig.from_toml(config_path)
     db.migrate(config.db_path)
+    notifier = create_notifier(config)
+    notification_state = TemperatureNotificationState()
     relay = (
         None
         if dry_run
@@ -230,6 +378,8 @@ def run(
                 config=config,
                 dry_run_temperature=dry_run_temperature,
                 db_path=config.db_path,
+                notifier=notifier,
+                notification_state=notification_state,
             )
             if once:
                 break
@@ -260,6 +410,21 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Use this temperature instead of reading a real w1 sensor.",
     )
     return parser.parse_args(argv)
+
+
+def _optional_float(value) -> float | None:
+    """Return a float for configured values while treating blanks as disabled."""
+    if value is None or value == "":
+        return None
+    return float(value)
+
+
+def _optional_str(value) -> str | None:
+    """Return a stripped string or None for blank secret/config values."""
+    if value is None:
+        return None
+    stripped = str(value).strip()
+    return stripped or None
 
 
 def main(argv: list[str] | None = None) -> int:
