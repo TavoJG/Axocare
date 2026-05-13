@@ -10,6 +10,7 @@ recent temperature history.
 - Raspberry Pi with 1-Wire enabled
 - DS18B20 temperature sensor on GPIO 4
 - Waveshare RPi Relay Board using CH1 on BCM GPIO 26 / physical pin 37
+  and CH2 on BCM GPIO 20 / physical pin 38
 - Cooling device connected through the relay
 
 The Waveshare RPi Relay Board is low-active, so relay on means GPIO LOW.
@@ -53,8 +54,8 @@ notification_threshold_c = 20.0
 interval_seconds = 60
 
 [relay]
-pin = 26
 active_high = false
+pins = [26, 20]
 
 [sensor]
 id = ""
