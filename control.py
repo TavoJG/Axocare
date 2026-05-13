@@ -23,6 +23,11 @@ except ImportError:  # Development machines usually do not have RPi.GPIO.
 
 DEFAULT_CONFIG_PATH = "config.toml"
 WAVESHARE_RPI_RELAY_CH1_BCM_PIN = 26
+WAVESHARE_RPI_RELAY_CH2_BCM_PIN = 28
+WAVESHARE_RPI_RELAY_DEFAULT_BCM_PINS = (
+    WAVESHARE_RPI_RELAY_CH1_BCM_PIN,
+    WAVESHARE_RPI_RELAY_CH2_BCM_PIN,
+)
 WAVESHARE_RPI_RELAY_ACTIVE_HIGH = False
 
 
@@ -51,6 +56,7 @@ class ControlConfig:
     pushover_app_token: str | None
     pushover_user_key: str | None
     pushover_title: str
+    relay_pins: tuple[int, ...] = WAVESHARE_RPI_RELAY_DEFAULT_BCM_PINS
 
     @classmethod
     def from_toml(cls, config_path: str | Path) -> "ControlConfig":
@@ -74,6 +80,7 @@ class ControlConfig:
             ),
             interval_seconds=int(control.get("interval_seconds", 60)),
             relay_pin=int(relay.get("pin", WAVESHARE_RPI_RELAY_CH1_BCM_PIN)),
+            relay_pins=_relay_pins_from_config(relay),
             relay_active_high=bool(
                 relay.get("active_high", WAVESHARE_RPI_RELAY_ACTIVE_HIGH)
             ),
@@ -154,30 +161,33 @@ class PushoverNotifier:
 
 
 class Relay:
-    """GPIO-backed relay output for switching the cooling device."""
+    """GPIO-backed relay outputs for switching the cooling device."""
 
-    def __init__(self, pin: int, active_high: bool) -> None:
-        """Initialize the relay pin and leave the relay in the off state."""
+    def __init__(self, pins: tuple[int, ...] | list[int], active_high: bool) -> None:
+        """Initialize relay pins and leave the relays in the off state."""
         if GPIO is None:
             raise RuntimeError("RPi.GPIO is not installed; run this on a Raspberry Pi.")
 
-        self.pin = pin
+        self.pins = tuple(pins)
         self.active_high = active_high
         self.is_on = False
 
         GPIO.setmode(GPIO.BCM)
-        GPIO.cleanup(self.pin)
-        GPIO.setup(self.pin, GPIO.OUT, initial=self._gpio_level(False))
+        for pin in self.pins:
+            GPIO.cleanup(pin)
+            GPIO.setup(pin, GPIO.OUT, initial=self._gpio_level(False))
 
     def set(self, enabled: bool) -> None:
-        """Turn the relay on or off."""
-        GPIO.output(self.pin, self._gpio_level(enabled))
+        """Turn the relays on or off."""
+        for pin in self.pins:
+            GPIO.output(pin, self._gpio_level(enabled))
         self.is_on = enabled
 
     def cleanup(self) -> None:
-        """Turn the relay off and release the GPIO pin."""
+        """Turn the relays off and release the GPIO pins."""
         self.set(False)
-        GPIO.cleanup(self.pin)
+        for pin in self.pins:
+            GPIO.cleanup(pin)
 
     def _gpio_level(self, enabled: bool) -> int:
         """Convert logical relay state to the physical GPIO output level."""
@@ -353,7 +363,7 @@ def run(
     relay = (
         None
         if dry_run
-        else Relay(pin=config.relay_pin, active_high=config.relay_active_high)
+        else Relay(pins=config.relay_pins, active_high=config.relay_active_high)
     )
     sensor = (
         None if dry_run_temperature is not None else create_sensor(config.sensor_id)
@@ -425,6 +435,24 @@ def _optional_str(value) -> str | None:
         return None
     stripped = str(value).strip()
     return stripped or None
+
+
+def _relay_pins_from_config(relay: dict) -> tuple[int, ...]:
+    """Return configured relay pins, defaulting to Waveshare CH1 and CH2."""
+    if "pins" in relay:
+        return tuple(int(pin) for pin in relay["pins"])
+    if "pin" in relay:
+        return _unique_pins((int(relay["pin"]), WAVESHARE_RPI_RELAY_CH2_BCM_PIN))
+    return WAVESHARE_RPI_RELAY_DEFAULT_BCM_PINS
+
+
+def _unique_pins(pins: tuple[int, ...]) -> tuple[int, ...]:
+    """Keep relay pin order while removing duplicates."""
+    unique: list[int] = []
+    for pin in pins:
+        if pin not in unique:
+            unique.append(pin)
+    return tuple(unique)
 
 
 def main(argv: list[str] | None = None) -> int:

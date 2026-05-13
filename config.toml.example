@@ -12,7 +12,7 @@ interval_seconds = 60
 
 [relay]
 active_high = false
-pin = 26
+pins = [26, 28]
 
 [sensor]
 id = ""
