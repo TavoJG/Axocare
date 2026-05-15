@@ -1,4 +1,10 @@
 __pycache__/
+.env
 *.db
 frontend/node_modules/
+health_checker/dist/
 config.toml
+.python-version
+
+# Go binary
+health_checker/dist

@@ -1,0 +1,12 @@
+[Unit]
+Description=Axocare health checker
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/pi/axocare/health_checker
+EnvironmentFile=/home/pi/axocare/health_checker/.env
+ExecStart=/home/pi/axocare/health_checker/axocare-health-checker-pi4
+User=pi
+Group=pi

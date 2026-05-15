@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Axocare health checker every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+Unit=axocare-health-checker.service
+
+[Install]
+WantedBy=timers.target
