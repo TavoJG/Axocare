@@ -10,6 +10,14 @@ target_c = 18.0
 [control]
 interval_seconds = 60
 
+[camera]
+device = "0"
+enabled = false
+fps = 15
+height = 480
+jpeg_quality = 80
+width = 640
+
 [relay]
 active_high = false
 pins = [26, 20]

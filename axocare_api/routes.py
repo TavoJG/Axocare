@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 
 import db
+from axocare_api.camera import BOUNDARY, CameraUnavailableError, MjpegCameraStream
 from axocare_api.schemas import (
     CurrentReadingResponse,
     DashboardResponse,
@@ -37,6 +39,7 @@ def root() -> dict[str, Any]:
             "current": "/api/current",
             "temperature_readings": "/api/temperature-readings",
             "relay_events": "/api/relay-events",
+            "camera_stream": "/api/camera/stream",
         },
     }
 
@@ -131,4 +134,22 @@ def dashboard(
         readings=[temperature_reading(row) for row in readings],
         relay_events=[relay_event(row) for row in events],
         span_minutes=span_minutes,
+    )
+
+
+@router.get("/camera/stream", tags=["camera"])
+def camera_stream(
+    api_settings: ApiSettings = Depends(settings),
+) -> StreamingResponse:
+    if not api_settings.camera_enabled:
+        raise HTTPException(status_code=404, detail="Camera streaming is disabled")
+
+    try:
+        stream = MjpegCameraStream(api_settings)
+    except CameraUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return StreamingResponse(
+        stream,
+        media_type=f"multipart/x-mixed-replace; boundary={BOUNDARY}",
     )

@@ -61,6 +61,12 @@ def test_dashboard_returns_current_history_and_relay_events(tmp_path: Path) -> N
         "cooling_off_c": 18.0,
         "notification_threshold_c": 20.0,
         "interval_seconds": 60,
+        "camera_enabled": False,
+        "camera_device": "0",
+        "camera_width": 640,
+        "camera_height": 480,
+        "camera_fps": 15,
+        "camera_jpeg_quality": 80,
     }
     assert payload["current"] == {
         "id": 2,
@@ -152,6 +158,16 @@ def test_openapi_schema_is_served_under_api_prefix(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert response.json()["openapi"].startswith("3.")
+
+
+def test_camera_stream_is_disabled_by_default(tmp_path: Path) -> None:
+    db_path = tmp_path / "camera.db"
+
+    with TestClient(create_app(_write_config(tmp_path, db_path))) as client:
+        response = client.get("/api/camera/stream")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Camera streaming is disabled"}
 
 
 def _write_config(tmp_path: Path, db_path: Path) -> Path:

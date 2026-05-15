@@ -23,6 +23,12 @@ class ApiSettings(BaseModel):
     cooling_off_c: float
     notification_threshold_c: float | None
     interval_seconds: int
+    camera_enabled: bool = False
+    camera_device: str = "0"
+    camera_width: int = 640
+    camera_height: int = 480
+    camera_fps: int = 15
+    camera_jpeg_quality: int = 80
 
     @classmethod
     def from_toml(cls, config_path: str | Path = DEFAULT_CONFIG_PATH) -> "ApiSettings":
@@ -32,6 +38,7 @@ class ApiSettings(BaseModel):
         database = values.get("database", {})
         temperature = values.get("temperature", {})
         control = values.get("control", {})
+        camera = values.get("camera", {})
 
         return cls(
             db_path=str(database.get("path", db.DEFAULT_DB_PATH)),
@@ -42,6 +49,12 @@ class ApiSettings(BaseModel):
                 temperature.get("notification_threshold_c")
             ),
             interval_seconds=int(control.get("interval_seconds", 60)),
+            camera_enabled=bool(camera.get("enabled", False)),
+            camera_device=str(camera.get("device", "0")),
+            camera_width=int(camera.get("width", 640)),
+            camera_height=int(camera.get("height", 480)),
+            camera_fps=int(camera.get("fps", 15)),
+            camera_jpeg_quality=int(camera.get("jpeg_quality", 80)),
         )
 
 

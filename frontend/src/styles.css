@@ -180,6 +180,32 @@ select {
   overflow: hidden;
 }
 
+.camera-panel {
+  margin-bottom: 16px;
+}
+
+.camera-frame {
+  position: relative;
+  display: grid;
+  min-height: 220px;
+  overflow: hidden;
+  place-items: center;
+  border-radius: 8px;
+  background: #101820;
+}
+
+.camera-frame img {
+  display: block;
+  width: 100%;
+  max-height: 520px;
+  object-fit: contain;
+}
+
+.camera-error {
+  color: #dbe7ea;
+  font-weight: 700;
+}
+
 .chart-frame {
   position: relative;
   flex: 1;

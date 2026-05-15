@@ -53,6 +53,14 @@ notification_threshold_c = 20.0
 [control]
 interval_seconds = 60
 
+[camera]
+enabled = false
+device = "0"
+width = 640
+height = 480
+fps = 15
+jpeg_quality = 80
+
 [relay]
 active_high = false
 pins = [26, 20]
@@ -77,6 +85,40 @@ threshold. Add your Pushover application token and user key under `[pushover]`,
 or provide them with `PUSHOVER_APP_TOKEN` and `PUSHOVER_USER_KEY`.
 
 Leave `sensor.id` empty to use the first detected DS18B20 sensor.
+
+## Camera Streaming
+
+Axocare can expose an MJPEG stream for a webcam connected to the Raspberry Pi.
+Install OpenCV from the Raspberry Pi OS packages:
+
+```bash
+sudo apt install python3-opencv
+```
+
+For a USB webcam, enable the camera in `config.toml`:
+
+```toml
+[camera]
+enabled = true
+device = "0"
+width = 640
+height = 480
+fps = 15
+jpeg_quality = 80
+```
+
+`device = "0"` maps to the first `/dev/video*` camera. You can also use an
+explicit device path such as `device = "/dev/video0"`.
+
+When enabled, the API serves:
+
+```text
+http://<pi-ip>:8000/api/camera/stream
+```
+
+The Vite dashboard automatically shows a live camera panel when
+`camera.enabled` is true. If you serve the production dashboard through the
+included NGINX config, the stream is proxied through `/api/camera/stream`.
 
 ## Run
 

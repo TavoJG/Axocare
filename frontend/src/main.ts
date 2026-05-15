@@ -46,6 +46,12 @@ type ApiSettings = {
   cooling_off_c: number;
   notification_threshold_c: number | null;
   interval_seconds: number;
+  camera_enabled: boolean;
+  camera_device: string;
+  camera_width: number;
+  camera_height: number;
+  camera_fps: number;
+  camera_jpeg_quality: number;
 };
 
 type DashboardResponse = {
@@ -93,6 +99,20 @@ app.innerHTML = `
 
     <main>
       <section id="status" class="status-grid" aria-live="polite"></section>
+
+      <section id="cameraPanel" class="panel camera-panel" hidden>
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Live camera</p>
+            <h2>Tank view</h2>
+          </div>
+          <span id="cameraMeta" class="muted"></span>
+        </div>
+        <div class="camera-frame">
+          <div id="cameraError" class="camera-error" hidden>Camera stream unavailable</div>
+          <img id="cameraStream" alt="Live aquarium camera stream" />
+        </div>
+      </section>
 
       <section class="panel chart-panel">
         <div class="panel-header">
@@ -154,6 +174,10 @@ const lastUpdated = document.querySelector<HTMLElement>("#lastUpdated")!;
 const readingsBody = document.querySelector<HTMLTableSectionElement>("#readingsBody")!;
 const eventsList = document.querySelector<HTMLElement>("#eventsList")!;
 const chartCanvas = document.querySelector<HTMLCanvasElement>("#temperatureChart")!;
+const cameraPanel = document.querySelector<HTMLElement>("#cameraPanel")!;
+const cameraMeta = document.querySelector<HTMLElement>("#cameraMeta")!;
+const cameraStream = document.querySelector<HTMLImageElement>("#cameraStream")!;
+const cameraError = document.querySelector<HTMLElement>("#cameraError")!;
 
 spanSelect.value = String(state.spanMinutes);
 spanSelect.addEventListener("change", () => {
@@ -161,6 +185,14 @@ spanSelect.addEventListener("change", () => {
   loadDashboard();
 });
 refreshButton.addEventListener("click", () => loadDashboard());
+cameraStream.addEventListener("load", () => {
+  cameraError.hidden = true;
+  cameraStream.hidden = false;
+});
+cameraStream.addEventListener("error", () => {
+  cameraError.hidden = false;
+  cameraStream.hidden = true;
+});
 
 loadDashboard();
 
@@ -190,11 +222,28 @@ async function loadDashboard(): Promise<void> {
 
 function renderDashboard(payload: DashboardResponse): void {
   renderStatus(payload);
+  renderCamera(payload.settings);
   renderChart(payload);
   renderReadings(payload.readings);
   renderEvents(payload.relay_events);
   chartTitle.textContent = `Last ${formatSpan(payload.span_minutes).toLowerCase()}`;
   lastUpdated.textContent = `Updated ${formatTime(new Date().toISOString())}`;
+}
+
+function renderCamera(settings: ApiSettings): void {
+  cameraPanel.hidden = !settings.camera_enabled;
+  if (!settings.camera_enabled) {
+    cameraStream.removeAttribute("src");
+    cameraError.hidden = true;
+    return;
+  }
+
+  cameraMeta.textContent = `${settings.camera_width}x${settings.camera_height} at ${settings.camera_fps} fps`;
+  if (!cameraStream.src) {
+    cameraError.hidden = true;
+    cameraStream.hidden = false;
+    cameraStream.src = `${API_BASE}/api/camera/stream`;
+  }
 }
 
 function renderStatus(payload: DashboardResponse): void {
