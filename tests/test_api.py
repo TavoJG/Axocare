@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 import db
+from axocare_api import routes as api_routes
 from axocare_api.app import create_app
 
 
@@ -170,7 +171,33 @@ def test_camera_stream_is_disabled_by_default(tmp_path: Path) -> None:
     assert response.json() == {"detail": "Camera streaming is disabled"}
 
 
-def _write_config(tmp_path: Path, db_path: Path) -> Path:
+def test_camera_stream_sends_mobile_friendly_headers(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db_path = tmp_path / "camera.db"
+
+    monkeypatch.setattr(api_routes, "MjpegCameraStream", _FakeMjpegCameraStream)
+
+    with TestClient(
+        create_app(_write_config(tmp_path, db_path, camera_enabled=True))
+    ) as client:
+        response = client.get("/api/camera/stream")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(
+        "multipart/x-mixed-replace; boundary=frame"
+    )
+    assert response.headers["cache-control"] == (
+        "no-store, no-cache, must-revalidate, max-age=0"
+    )
+    assert response.headers["pragma"] == "no-cache"
+    assert response.headers["expires"] == "0"
+    assert response.headers["x-accel-buffering"] == "no"
+
+
+def _write_config(
+    tmp_path: Path, db_path: Path, *, camera_enabled: bool = False
+) -> Path:
     config_path = tmp_path / "config.toml"
     config_path.write_text(
         f"""
@@ -185,6 +212,9 @@ notification_threshold_c = 20.0
 
 [control]
 interval_seconds = 60
+
+[camera]
+enabled = {"true" if camera_enabled else "false"}
 """.strip(),
         encoding="utf-8",
     )
@@ -214,6 +244,14 @@ def _insert_temperature(
             (recorded_at, temperature_c, int(relay_on), sensor_id),
         )
         conn.commit()
+
+
+class _FakeMjpegCameraStream:
+    def __init__(self, _settings) -> None:
+        pass
+
+    def __iter__(self):
+        yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\nfake\r\n"
 
 
 def _insert_relay_event(

@@ -68,7 +68,9 @@ const SPAN_OPTIONS = [15, 30, 60, 180, 360, 720, 1440];
 const state = {
   spanMinutes: 60,
   chart: null as Chart<"line", (number | null)[], string> | null,
-  refreshTimer: 0
+  refreshTimer: 0,
+  cameraRetryTimer: 0,
+  cameraRetryCount: 0
 };
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -186,12 +188,20 @@ spanSelect.addEventListener("change", () => {
 });
 refreshButton.addEventListener("click", () => loadDashboard());
 cameraStream.addEventListener("load", () => {
+  window.clearTimeout(state.cameraRetryTimer);
+  state.cameraRetryCount = 0;
   cameraError.hidden = true;
   cameraStream.hidden = false;
 });
 cameraStream.addEventListener("error", () => {
   cameraError.hidden = false;
   cameraStream.hidden = true;
+  scheduleCameraRetry();
+});
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && !cameraPanel.hidden) {
+    startCameraStream();
+  }
 });
 
 loadDashboard();
@@ -240,10 +250,26 @@ function renderCamera(settings: ApiSettings): void {
 
   cameraMeta.textContent = `${settings.camera_width}x${settings.camera_height} at ${settings.camera_fps} fps`;
   if (!cameraStream.src) {
-    cameraError.hidden = true;
-    cameraStream.hidden = false;
-    cameraStream.src = `${API_BASE}/api/camera/stream`;
+    startCameraStream();
   }
+}
+
+function startCameraStream(): void {
+  window.clearTimeout(state.cameraRetryTimer);
+  cameraError.hidden = true;
+  cameraStream.hidden = false;
+  cameraStream.src = `${API_BASE}/api/camera/stream?t=${Date.now()}`;
+}
+
+function scheduleCameraRetry(): void {
+  window.clearTimeout(state.cameraRetryTimer);
+  const delayMs = Math.min(1000 * 2 ** state.cameraRetryCount, 15000);
+  state.cameraRetryCount += 1;
+  state.cameraRetryTimer = window.setTimeout(() => {
+    if (!cameraPanel.hidden && !document.hidden) {
+      startCameraStream();
+    }
+  }, delayMs);
 }
 
 function renderStatus(payload: DashboardResponse): void {

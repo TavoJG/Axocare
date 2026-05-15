@@ -23,6 +23,13 @@ router = APIRouter(
     prefix="/api",
 )
 
+CAMERA_STREAM_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+    "X-Accel-Buffering": "no",
+}
+
 
 def settings(request: Request) -> ApiSettings:
     """Return settings loaded during application startup."""
@@ -151,5 +158,6 @@ def camera_stream(
 
     return StreamingResponse(
         stream,
+        headers=CAMERA_STREAM_HEADERS,
         media_type=f"multipart/x-mixed-replace; boundary={BOUNDARY}",
     )
