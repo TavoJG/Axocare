@@ -28,11 +28,24 @@ class RelayEvent(BaseModel):
     temperature_c: float | None
 
 
+class ControlHealth(BaseModel):
+    """Controller loop health inferred from persisted readings."""
+
+    status: str
+    latest_reading_at: str | None
+    age_seconds: int | None
+    max_age_seconds: int
+    temperature_c: float | None
+    relay_on: bool | None
+    last_error: str | None
+
+
 class HealthResponse(BaseModel):
     """Basic process health for lightweight monitoring."""
 
     status: str
     db_path: str
+    control: ControlHealth
 
 
 class CurrentReadingResponse(BaseModel):

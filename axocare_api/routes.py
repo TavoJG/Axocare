@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -10,6 +11,7 @@ from fastapi.responses import StreamingResponse
 import db
 from axocare_api.camera import BOUNDARY, CameraUnavailableError, MjpegCameraStream
 from axocare_api.schemas import (
+    ControlHealth,
     CurrentReadingResponse,
     DashboardResponse,
     HealthResponse,
@@ -17,6 +19,7 @@ from axocare_api.schemas import (
     TemperatureHistoryResponse,
 )
 from axocare_api.serializers import relay_event, temperature_reading
+from axocare_api.serializers import recorded_at as serialized_recorded_at
 from axocare_api.settings import DEFAULT_HISTORY_MINUTES, DEFAULT_LIMIT, ApiSettings
 
 router = APIRouter(
@@ -53,7 +56,65 @@ def root() -> dict[str, Any]:
 
 @router.get("/health", response_model=HealthResponse, tags=["meta"])
 def health(api_settings: ApiSettings = Depends(settings)) -> HealthResponse:
-    return HealthResponse(status="ok", db_path=api_settings.db_path)
+    return HealthResponse(
+        status="ok",
+        db_path=api_settings.db_path,
+        control=_control_health(api_settings),
+    )
+
+
+def _control_health(api_settings: ApiSettings) -> ControlHealth:
+    """Infer whether the controller is still producing healthy readings."""
+    row = db.latest_temperature(db_path=api_settings.db_path)
+    max_age_seconds = max(api_settings.interval_seconds * 2, 1)
+
+    if row is None:
+        return ControlHealth(
+            status="unknown",
+            latest_reading_at=None,
+            age_seconds=None,
+            max_age_seconds=max_age_seconds,
+            temperature_c=None,
+            relay_on=None,
+            last_error=None,
+        )
+
+    latest_reading_at = serialized_recorded_at(row["recorded_at"])
+    age_seconds = _reading_age_seconds(row["recorded_at"])
+    last_error = row["error"]
+    status = "ok"
+    if last_error:
+        status = "error"
+    elif age_seconds is None or age_seconds > max_age_seconds:
+        status = "stale"
+
+    return ControlHealth(
+        status=status,
+        latest_reading_at=latest_reading_at,
+        age_seconds=age_seconds,
+        max_age_seconds=max_age_seconds,
+        temperature_c=row["temperature_c"],
+        relay_on=bool(row["relay_on"]),
+        last_error=last_error,
+    )
+
+
+def _reading_age_seconds(recorded_at: str) -> int | None:
+    """Return how many seconds ago a SQLite UTC timestamp was written."""
+    try:
+        if recorded_at.endswith("Z"):
+            recorded_at_dt = datetime.fromisoformat(
+                recorded_at.removesuffix("Z")
+            ).replace(tzinfo=timezone.utc)
+        else:
+            recorded_at_dt = datetime.fromisoformat(recorded_at.replace(" ", "T"))
+            if recorded_at_dt.tzinfo is None:
+                recorded_at_dt = recorded_at_dt.replace(tzinfo=timezone.utc)
+        age = datetime.now(timezone.utc) - recorded_at_dt
+    except ValueError:
+        return None
+
+    return max(0, int(age.total_seconds()))
 
 
 @router.get(

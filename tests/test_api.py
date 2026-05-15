@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -17,9 +18,95 @@ def test_health_and_empty_current_reading(tmp_path: Path) -> None:
         current = client.get("/api/current")
 
     assert health.status_code == 200
-    assert health.json() == {"status": "ok", "db_path": str(db_path)}
+    assert health.json() == {
+        "status": "ok",
+        "db_path": str(db_path),
+        "control": {
+            "status": "unknown",
+            "latest_reading_at": None,
+            "age_seconds": None,
+            "max_age_seconds": 120,
+            "temperature_c": None,
+            "relay_on": None,
+            "last_error": None,
+        },
+    }
     assert current.status_code == 200
     assert current.json() == {"reading": None, "db_path": str(db_path)}
+
+
+def test_health_reports_control_ok_when_latest_reading_is_recent(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "healthy-control.db"
+    config_path = _write_config(tmp_path, db_path)
+    db.migrate(db_path)
+    recorded_at = _sqlite_utc(datetime.now(timezone.utc) - timedelta(seconds=10))
+    _insert_temperature(
+        db_path,
+        recorded_at=recorded_at,
+        temperature_c=18.5,
+        relay_on=True,
+        sensor_id="test-sensor",
+    )
+
+    with TestClient(create_app(config_path)) as client:
+        response = client.get("/api/health")
+
+    assert response.status_code == 200
+    control = response.json()["control"]
+    assert control["status"] == "ok"
+    assert control["latest_reading_at"] == recorded_at.replace(" ", "T") + "Z"
+    assert 0 <= control["age_seconds"] <= 120
+    assert control["max_age_seconds"] == 120
+    assert control["temperature_c"] == 18.5
+    assert control["relay_on"] is True
+    assert control["last_error"] is None
+
+
+def test_health_reports_control_stale_when_latest_reading_is_old(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "stale-control.db"
+    config_path = _write_config(tmp_path, db_path)
+    db.migrate(db_path)
+    _insert_temperature(
+        db_path,
+        recorded_at="2000-01-01 00:00:00",
+        temperature_c=18.5,
+        relay_on=False,
+        sensor_id="test-sensor",
+    )
+
+    with TestClient(create_app(config_path)) as client:
+        response = client.get("/api/health")
+
+    assert response.status_code == 200
+    assert response.json()["control"]["status"] == "stale"
+
+
+def test_health_reports_control_error_when_latest_reading_has_sensor_error(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "error-control.db"
+    config_path = _write_config(tmp_path, db_path)
+    db.migrate(db_path)
+    _insert_temperature(
+        db_path,
+        recorded_at=_sqlite_utc(datetime.now(timezone.utc)),
+        temperature_c=None,
+        relay_on=False,
+        sensor_id="test-sensor",
+        error="sensor_read_error: disconnected",
+    )
+
+    with TestClient(create_app(config_path)) as client:
+        response = client.get("/api/health")
+
+    assert response.status_code == 200
+    control = response.json()["control"]
+    assert control["status"] == "error"
+    assert control["last_error"] == "sensor_read_error: disconnected"
 
 
 def test_dashboard_returns_current_history_and_relay_events(tmp_path: Path) -> None:
@@ -225,9 +312,10 @@ def _insert_temperature(
     db_path: Path,
     *,
     recorded_at: str,
-    temperature_c: float,
+    temperature_c: float | None,
     relay_on: bool,
     sensor_id: str,
+    error: str | None = None,
 ) -> None:
     with db.connect(db_path) as conn:
         conn.execute(
@@ -239,11 +327,15 @@ def _insert_temperature(
                 sensor_id,
                 error
             )
-            VALUES (?, ?, ?, ?, NULL)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (recorded_at, temperature_c, int(relay_on), sensor_id),
+            (recorded_at, temperature_c, int(relay_on), sensor_id, error),
         )
         conn.commit()
+
+
+def _sqlite_utc(value: datetime) -> str:
+    return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
 class _FakeMjpegCameraStream:
