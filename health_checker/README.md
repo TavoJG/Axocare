@@ -3,6 +3,8 @@
 Small Go checker intended for cron or a systemd timer. It calls the Axocare API
 health endpoint and sends a Pushover notification when the API is unreachable,
 returns a bad status, or reports the control loop as anything other than `ok`.
+It also sends a recovery notification when a later check succeeds after a
+recorded failure.
 
 By default it checks:
 
@@ -20,6 +22,18 @@ go run .
 
 Variables already exported by cron, systemd, or your shell take precedence over
 values in `.env`.
+
+Optional settings:
+
+```bash
+AXOCARE_HEALTH_URL=http://127.0.0.1:8000/api/health
+AXOCARE_HEALTH_STATE_FILE=.health-checker-state.json
+PUSHOVER_TITLE="Axocare health alert"
+```
+
+`AXOCARE_HEALTH_STATE_FILE` stores the previous run status so a oneshot timer can
+detect recovery across separate executions. The default path is relative to the
+checker working directory.
 
 Build for a Raspberry Pi 4 running 64-bit Raspberry Pi OS:
 

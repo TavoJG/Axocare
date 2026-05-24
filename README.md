@@ -186,18 +186,6 @@ Set `AXOCARE_CONFIG=/path/to/config.toml` to load a non-default config file.
 Set `AXOCARE_CORS_ORIGINS=http://localhost:5173,http://<pi-ip>` to restrict
 browser origins for a frontend. By default, the API allows all origins.
 
-The old Streamlit dashboard can still be started while the frontend migrates:
-
-```bash
-streamlit run dashboard.py --server.address 0.0.0.0 --server.port 8501
-```
-
-Open:
-
-```text
-http://<pi-ip>:8501
-```
-
 ## NGINX HTTP Proxy
 
 To serve the dashboard over plain HTTP on port 80, build the Vite dashboard and

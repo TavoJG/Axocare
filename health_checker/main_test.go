@@ -45,6 +45,74 @@ func TestCheckHealthDoesNotNotifyWhenEverythingIsHealthy(t *testing.T) {
 	}
 }
 
+func TestCheckHealthWithStateNotifiesWhenHealthRecovers(t *testing.T) {
+	healthURL := "http://axocare.test/api/health"
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	if err := writeHealthState(statePath, false); err != nil {
+		t.Fatalf("failed to write starting state: %v", err)
+	}
+
+	var pushoverForm url.Values
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.String() == pushoverAPIURL {
+				pushoverForm = readForm(t, req)
+				return response(http.StatusOK, "{}"), nil
+			}
+
+			if req.URL.String() != healthURL {
+				t.Fatalf("unexpected request URL: %s", req.URL.String())
+			}
+			return response(http.StatusOK, `{"status":"ok","db_path":"axocare.db","control":{"status":"ok","latest_reading_at":null,"age_seconds":1,"max_age_seconds":120,"temperature_c":18.4,"relay_on":false,"last_error":null}}`), nil
+		}),
+	}
+
+	err := CheckHealthWithState(context.Background(), client, healthURL, validPushoverConfig(), statePath)
+
+	if err != nil {
+		t.Fatalf("CheckHealthWithState returned error: %v", err)
+	}
+	assertPushoverField(t, pushoverForm, "message", "Axocare health check recovered; API and control loop are ok.")
+
+	state, err := readHealthState(statePath)
+	if err != nil {
+		t.Fatalf("failed to read state: %v", err)
+	}
+	if state == nil || !state.Healthy {
+		t.Fatalf("expected healthy state after recovery, got %#v", state)
+	}
+}
+
+func TestCheckHealthWithStateRecordsFailure(t *testing.T) {
+	healthURL := "http://axocare.test/api/health"
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.String() == pushoverAPIURL {
+				return response(http.StatusOK, "{}"), nil
+			}
+
+			if req.URL.String() != healthURL {
+				t.Fatalf("unexpected request URL: %s", req.URL.String())
+			}
+			return response(http.StatusOK, `{"status":"ok","db_path":"axocare.db","control":{"status":"stale","latest_reading_at":"2026-05-15T10:00:00Z","age_seconds":300,"max_age_seconds":120,"temperature_c":18.4,"relay_on":false,"last_error":null}}`), nil
+		}),
+	}
+
+	err := CheckHealthWithState(context.Background(), client, healthURL, validPushoverConfig(), statePath)
+
+	if err != nil {
+		t.Fatalf("CheckHealthWithState returned error: %v", err)
+	}
+	state, err := readHealthState(statePath)
+	if err != nil {
+		t.Fatalf("failed to read state: %v", err)
+	}
+	if state == nil || state.Healthy {
+		t.Fatalf("expected unhealthy state after failure, got %#v", state)
+	}
+}
+
 func TestCheckHealthNotifiesWhenControlIsStale(t *testing.T) {
 	healthURL := "http://axocare.test/api/health"
 	var pushoverForm url.Values

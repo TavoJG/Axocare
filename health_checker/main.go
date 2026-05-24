@@ -19,6 +19,7 @@ import (
 
 const (
 	defaultHealthURL = "http://127.0.0.1:8000/api/health"
+	defaultStatePath = ".health-checker-state.json"
 	pushoverAPIURL   = "https://api.pushover.net/1/messages.json"
 )
 
@@ -44,6 +45,10 @@ type PushoverConfig struct {
 	Title    string
 }
 
+type HealthCheckState struct {
+	Healthy bool `json:"healthy"`
+}
+
 func main() {
 	if err := loadEnvFile(".env"); err != nil {
 		log.Fatal(err)
@@ -53,13 +58,14 @@ func main() {
 	defer cancel()
 
 	healthURL := getenv("AXOCARE_HEALTH_URL", defaultHealthURL)
+	statePath := getenv("AXOCARE_HEALTH_STATE_FILE", defaultStatePath)
 	pushover := PushoverConfig{
 		AppToken: os.Getenv("PUSHOVER_APP_TOKEN"),
 		UserKey:  os.Getenv("PUSHOVER_USER_KEY"),
 		Title:    getenv("PUSHOVER_TITLE", "Axocare health alert"),
 	}
 
-	if err := CheckHealth(ctx, http.DefaultClient, healthURL, pushover); err != nil {
+	if err := CheckHealthWithState(ctx, http.DefaultClient, healthURL, pushover, statePath); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -70,23 +76,63 @@ func CheckHealth(
 	healthURL string,
 	pushover PushoverConfig,
 ) error {
+	return checkHealth(ctx, client, healthURL, pushover, "")
+}
+
+func CheckHealthWithState(
+	ctx context.Context,
+	client *http.Client,
+	healthURL string,
+	pushover PushoverConfig,
+	statePath string,
+) error {
+	return checkHealth(ctx, client, healthURL, pushover, statePath)
+}
+
+func checkHealth(
+	ctx context.Context,
+	client *http.Client,
+	healthURL string,
+	pushover PushoverConfig,
+	statePath string,
+) error {
 	health, err := fetchHealth(ctx, client, healthURL)
 	if err != nil {
 		message := fmt.Sprintf("Axocare API health check failed: %v", err)
-		return notifyPushover(ctx, client, pushover, message)
+		if err := notifyPushover(ctx, client, pushover, message); err != nil {
+			return err
+		}
+		return writeHealthState(statePath, false)
 	}
 
 	if health.Status != "ok" {
 		message := fmt.Sprintf("Axocare API status is %q.", health.Status)
-		return notifyPushover(ctx, client, pushover, message)
+		if err := notifyPushover(ctx, client, pushover, message); err != nil {
+			return err
+		}
+		return writeHealthState(statePath, false)
 	}
 
 	if health.Control.Status != "ok" {
 		message := controlProblemMessage(health.Control)
-		return notifyPushover(ctx, client, pushover, message)
+		if err := notifyPushover(ctx, client, pushover, message); err != nil {
+			return err
+		}
+		return writeHealthState(statePath, false)
 	}
 
-	return nil
+	previousState, err := readHealthState(statePath)
+	if err != nil {
+		return err
+	}
+	if previousState != nil && !previousState.Healthy {
+		message := "Axocare health check recovered; API and control loop are ok."
+		if err := notifyPushover(ctx, client, pushover, message); err != nil {
+			return err
+		}
+	}
+
+	return writeHealthState(statePath, true)
 }
 
 func fetchHealth(ctx context.Context, client *http.Client, healthURL string) (*HealthResponse, error) {
@@ -175,6 +221,41 @@ func notifyPushover(
 	}
 
 	return nil
+}
+
+func readHealthState(path string) (*HealthCheckState, error) {
+	if path == "" {
+		return nil, nil
+	}
+
+	body, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var state HealthCheckState
+	if err := json.Unmarshal(body, &state); err != nil {
+		return nil, fmt.Errorf("read health check state: %w", err)
+	}
+
+	return &state, nil
+}
+
+func writeHealthState(path string, healthy bool) error {
+	if path == "" {
+		return nil
+	}
+
+	body, err := json.MarshalIndent(HealthCheckState{Healthy: healthy}, "", "  ")
+	if err != nil {
+		return err
+	}
+	body = append(body, '\n')
+
+	return os.WriteFile(path, body, 0o600)
 }
 
 func getenv(name string, fallback string) string {
