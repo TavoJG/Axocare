@@ -57,6 +57,12 @@ def record_temperature(
     relay_on: bool,
     sensor_id: str | None = None,
     error: str | None = None,
+    *,
+    aht20_temperature_c: float | None = None,
+    aht20_humidity_percent: float | None = None,
+    bmp280_temperature_c: float | None = None,
+    bmp280_pressure_hpa: float | None = None,
+    ambient_error: str | None = None,
     db_path: str | Path = DEFAULT_DB_PATH,
 ) -> int:
     """Persist one sensor reading and return its row id."""
@@ -67,11 +73,26 @@ def record_temperature(
                 temperature_c,
                 relay_on,
                 sensor_id,
-                error
+                error,
+                aht20_temperature_c,
+                aht20_humidity_percent,
+                bmp280_temperature_c,
+                bmp280_pressure_hpa,
+                ambient_error
             )
-            VALUES (?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (temperature_c, int(relay_on), sensor_id, error),
+            (
+                temperature_c,
+                int(relay_on),
+                sensor_id,
+                error,
+                aht20_temperature_c,
+                aht20_humidity_percent,
+                bmp280_temperature_c,
+                bmp280_pressure_hpa,
+                ambient_error,
+            ),
         )
         conn.commit()
         return int(cursor.lastrowid)
@@ -111,7 +132,18 @@ def latest_temperatures(
         return list(
             conn.execute(
                 """
-                SELECT id, recorded_at, temperature_c, relay_on, sensor_id, error
+                SELECT
+                    id,
+                    recorded_at,
+                    temperature_c,
+                    relay_on,
+                    sensor_id,
+                    error,
+                    aht20_temperature_c,
+                    aht20_humidity_percent,
+                    bmp280_temperature_c,
+                    bmp280_pressure_hpa,
+                    ambient_error
                 FROM temperature_readings
                 ORDER BY recorded_at DESC, id DESC
                 LIMIT ?
@@ -148,7 +180,18 @@ def latest_temperature(
     """Return the newest temperature reading, if one exists."""
     with connect(db_path) as conn:
         return conn.execute("""
-            SELECT id, recorded_at, temperature_c, relay_on, sensor_id, error
+            SELECT
+                id,
+                recorded_at,
+                temperature_c,
+                relay_on,
+                sensor_id,
+                error,
+                aht20_temperature_c,
+                aht20_humidity_percent,
+                bmp280_temperature_c,
+                bmp280_pressure_hpa,
+                ambient_error
             FROM temperature_readings
             ORDER BY recorded_at DESC, id DESC
             LIMIT 1
@@ -165,7 +208,18 @@ def temperatures_since(
         return list(
             conn.execute(
                 """
-                SELECT id, recorded_at, temperature_c, relay_on, sensor_id, error
+                SELECT
+                    id,
+                    recorded_at,
+                    temperature_c,
+                    relay_on,
+                    sensor_id,
+                    error,
+                    aht20_temperature_c,
+                    aht20_humidity_percent,
+                    bmp280_temperature_c,
+                    bmp280_pressure_hpa,
+                    ambient_error
                 FROM temperature_readings
                 WHERE recorded_at >= datetime('now', ?)
                 ORDER BY recorded_at ASC, id ASC

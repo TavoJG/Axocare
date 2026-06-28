@@ -25,6 +25,11 @@ pins = [26, 20]
 [sensor]
 id = ""
 
+[i2c_sensor]
+enabled = false
+aht20_address = 0x38
+bmp280_address = 0x77
+
 [pushover]
 app_token = ""
 title = "Axocare temperature alert"

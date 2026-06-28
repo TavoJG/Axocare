@@ -29,6 +29,11 @@ type TemperatureReading = {
   relay_on: boolean;
   sensor_id: string | null;
   error: string | null;
+  aht20_temperature_c: number | null;
+  aht20_humidity_percent: number | null;
+  bmp280_temperature_c: number | null;
+  bmp280_pressure_hpa: number | null;
+  ambient_error: string | null;
 };
 
 type RelayEvent = {
@@ -143,7 +148,11 @@ app.innerHTML = `
               <thead>
                 <tr>
                   <th>Time</th>
-                  <th>Temperature</th>
+                  <th>Tank Temp</th>
+                  <th>AHT20 Temp</th>
+                  <th>Humidity</th>
+                  <th>BMP280 Temp</th>
+                  <th>Pressure</th>
                   <th>Relay</th>
                   <th>Sensor</th>
                 </tr>
@@ -280,6 +289,8 @@ function renderStatus(payload: DashboardResponse): void {
 
   status.innerHTML = `
     ${metricCard("Current temperature", formatTemperature(current?.temperature_c), current?.error ? "danger" : "")}
+    ${metricCard("Humidity", formatPercent(current?.aht20_humidity_percent), current?.ambient_error ? "danger" : "")}
+    ${metricCard("Pressure", formatPressure(current?.bmp280_pressure_hpa), current?.ambient_error ? "danger" : "")}
     ${metricCard("Relay", relayOn ? "On" : "Off", relayOn ? "active" : "")}
     ${metricCard("Sensor", sensorState, current?.error ? "danger" : "")}
     ${metricCard("Target", formatTemperature(settings.target_c), "")}
@@ -292,6 +303,13 @@ function renderStatus(payload: DashboardResponse): void {
     status.insertAdjacentHTML(
       "beforeend",
       `<article class="metric metric-wide danger"><span>Sensor message</span><strong>${escapeHtml(current.error)}</strong></article>`
+    );
+  }
+
+  if (current?.ambient_error) {
+    status.insertAdjacentHTML(
+      "beforeend",
+      `<article class="metric metric-wide danger"><span>I2C sensor message</span><strong>${escapeHtml(current.ambient_error)}</strong></article>`
     );
   }
 }
@@ -414,15 +432,19 @@ function renderReadings(readings: TemperatureReading[]): void {
 
   readingsBody.innerHTML =
     rows.length === 0
-      ? `<tr><td colspan="4" class="muted">No readings recorded.</td></tr>`
+      ? `<tr><td colspan="8" class="muted">No readings recorded.</td></tr>`
       : rows
           .map(
             (reading) => `
         <tr>
           <td>${formatTime(reading.recorded_at)}</td>
           <td>${formatTemperature(reading.temperature_c)}</td>
+          <td>${formatTemperature(reading.aht20_temperature_c)}</td>
+          <td>${formatPercent(reading.aht20_humidity_percent)}</td>
+          <td>${formatTemperature(reading.bmp280_temperature_c)}</td>
+          <td>${formatPressure(reading.bmp280_pressure_hpa)}</td>
           <td><span class="pill ${reading.relay_on ? "on" : ""}">${reading.relay_on ? "On" : "Off"}</span></td>
-          <td>${reading.error ? `<span class="text-danger">${escapeHtml(reading.error)}</span>` : escapeHtml(reading.sensor_id ?? "OK")}</td>
+          <td>${formatSensorState(reading)}</td>
         </tr>
       `
           )
@@ -491,6 +513,26 @@ function metricCard(label: string, value: string, tone: string): string {
 
 function formatTemperature(value: number | null | undefined): string {
   return value == null ? "No data" : `${value.toFixed(2)} C`;
+}
+
+function formatPercent(value: number | null | undefined): string {
+  return value == null ? "No data" : `${value.toFixed(1)} %`;
+}
+
+function formatPressure(value: number | null | undefined): string {
+  return value == null ? "No data" : `${value.toFixed(1)} hPa`;
+}
+
+function formatSensorState(reading: TemperatureReading): string {
+  const messages = [reading.error, reading.ambient_error].filter(
+    (message): message is string => Boolean(message)
+  );
+
+  if (messages.length > 0) {
+    return `<span class="text-danger">${escapeHtml(messages.join(" | "))}</span>`;
+  }
+
+  return escapeHtml(reading.sensor_id ?? "OK");
 }
 
 function formatSpan(minutes: number): string {

@@ -29,6 +29,8 @@ WAVESHARE_RPI_RELAY_DEFAULT_BCM_PINS = (
     WAVESHARE_RPI_RELAY_CH2_BCM_PIN,
 )
 WAVESHARE_RPI_RELAY_ACTIVE_HIGH = False
+DEFAULT_AHT20_ADDRESS = 0x38
+DEFAULT_BMP280_ADDRESS = 0x77
 
 
 @dataclass(frozen=True)
@@ -37,6 +39,17 @@ class SensorReading:
 
     temperature_c: float | None
     sensor_id: str | None
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class AmbientReading:
+    """Ambient telemetry returned by the optional AHT20 + BMP280 I2C module."""
+
+    aht20_temperature_c: float | None = None
+    aht20_humidity_percent: float | None = None
+    bmp280_temperature_c: float | None = None
+    bmp280_pressure_hpa: float | None = None
     error: str | None = None
 
 
@@ -53,6 +66,9 @@ class ControlConfig:
     relay_pin: int
     relay_active_high: bool
     sensor_id: str | None
+    i2c_sensor_enabled: bool
+    aht20_address: int
+    bmp280_address: int
     pushover_app_token: str | None
     pushover_user_key: str | None
     pushover_title: str
@@ -68,6 +84,7 @@ class ControlConfig:
         control = values.get("control", {})
         relay = values.get("relay", {})
         sensor = values.get("sensor", {})
+        i2c_sensor = values.get("i2c_sensor", {})
         pushover = values.get("pushover", {})
 
         return cls(
@@ -85,6 +102,13 @@ class ControlConfig:
                 relay.get("active_high", WAVESHARE_RPI_RELAY_ACTIVE_HIGH)
             ),
             sensor_id=sensor.get("id") or None,
+            i2c_sensor_enabled=bool(i2c_sensor.get("enabled", False)),
+            aht20_address=_parse_i2c_address(
+                i2c_sensor.get("aht20_address", DEFAULT_AHT20_ADDRESS)
+            ),
+            bmp280_address=_parse_i2c_address(
+                i2c_sensor.get("bmp280_address", DEFAULT_BMP280_ADDRESS)
+            ),
             pushover_app_token=_optional_str(
                 pushover.get("app_token") or os.getenv("PUSHOVER_APP_TOKEN")
             ),
@@ -196,6 +220,67 @@ class Relay:
         return GPIO.LOW if enabled else GPIO.HIGH
 
 
+class CombinedI2CSensor:
+    """Read the optional AHT20 and BMP280 sensors on a shared I2C bus."""
+
+    def __init__(self, *, aht20_address: int, bmp280_address: int) -> None:
+        self._aht20 = None
+        self._bmp280 = None
+        self._init_error: str | None = None
+
+        try:
+            import adafruit_ahtx0
+            import adafruit_bmp280
+            import board
+            import busio
+        except Exception as exc:
+            self._init_error = f"i2c_init_error: {exc}"
+            return
+
+        try:
+            i2c = busio.I2C(board.SCL, board.SDA)
+            self._aht20 = adafruit_ahtx0.AHTx0(i2c, address=aht20_address)
+            self._bmp280 = adafruit_bmp280.Adafruit_BMP280_I2C(
+                i2c,
+                address=bmp280_address,
+            )
+        except Exception as exc:
+            self._init_error = f"i2c_init_error: {exc}"
+
+    def read(self) -> AmbientReading:
+        """Return best-effort telemetry, preserving partial readings when possible."""
+        if self._init_error:
+            return AmbientReading(error=self._init_error)
+
+        aht20_temperature_c = None
+        aht20_humidity_percent = None
+        bmp280_temperature_c = None
+        bmp280_pressure_hpa = None
+        errors: list[str] = []
+
+        if self._aht20 is not None:
+            try:
+                aht20_temperature_c = float(self._aht20.temperature)
+                aht20_humidity_percent = float(self._aht20.relative_humidity)
+            except Exception as exc:
+                errors.append(f"aht20_read_error: {exc}")
+
+        if self._bmp280 is not None:
+            try:
+                bmp280_temperature_c = float(self._bmp280.temperature)
+                bmp280_pressure_hpa = float(self._bmp280.pressure)
+            except Exception as exc:
+                errors.append(f"bmp280_read_error: {exc}")
+
+        return AmbientReading(
+            aht20_temperature_c=aht20_temperature_c,
+            aht20_humidity_percent=aht20_humidity_percent,
+            bmp280_temperature_c=bmp280_temperature_c,
+            bmp280_pressure_hpa=bmp280_pressure_hpa,
+            error="; ".join(errors) or None,
+        )
+
+
 def create_sensor(sensor_id: str | None = None):
     """Create a DS18B20 sensor instance using w1thermsensor."""
     try:
@@ -220,6 +305,23 @@ def read_temperature(sensor, dry_run_temperature: float | None = None) -> Sensor
     except Exception as exc:
         sensor_id = getattr(sensor, "id", None)
         return SensorReading(None, sensor_id, f"sensor_read_error: {exc}")
+
+
+def create_i2c_sensor(config: ControlConfig) -> CombinedI2CSensor | None:
+    """Create the optional ambient I2C sensor bundle when enabled."""
+    if not config.i2c_sensor_enabled:
+        return None
+    return CombinedI2CSensor(
+        aht20_address=config.aht20_address,
+        bmp280_address=config.bmp280_address,
+    )
+
+
+def read_ambient(sensor: CombinedI2CSensor | None) -> AmbientReading:
+    """Read optional ambient telemetry or return an empty reading when disabled."""
+    if sensor is None:
+        return AmbientReading()
+    return sensor.read()
 
 
 def next_relay_state(
@@ -298,6 +400,7 @@ def control_once(
     *,
     current_relay_on: bool,
     sensor,
+    ambient_sensor: CombinedI2CSensor | None,
     config: ControlConfig,
     dry_run_temperature: float | None,
     db_path: str | Path,
@@ -306,6 +409,7 @@ def control_once(
 ) -> bool:
     """Run one control cycle and persist the reading plus any relay transition."""
     reading = read_temperature(sensor, dry_run_temperature)
+    ambient = read_ambient(ambient_sensor)
     desired_relay_on, reason = next_relay_state(
         current_relay_on,
         reading.temperature_c,
@@ -320,6 +424,11 @@ def control_once(
         desired_relay_on,
         sensor_id=reading.sensor_id,
         error=reading.error,
+        aht20_temperature_c=ambient.aht20_temperature_c,
+        aht20_humidity_percent=ambient.aht20_humidity_percent,
+        bmp280_temperature_c=ambient.bmp280_temperature_c,
+        bmp280_pressure_hpa=ambient.bmp280_pressure_hpa,
+        ambient_error=ambient.error,
         db_path=db_path,
     )
 
@@ -340,10 +449,15 @@ def control_once(
         )
 
     logging.info(
-        "temperature=%s relay_on=%s error=%s",
+        "temperature=%s relay_on=%s aht20_temp=%s humidity=%s bmp280_temp=%s pressure=%s error=%s ambient_error=%s",
         reading.temperature_c,
         desired_relay_on,
+        ambient.aht20_temperature_c,
+        ambient.aht20_humidity_percent,
+        ambient.bmp280_temperature_c,
+        ambient.bmp280_pressure_hpa,
         reading.error,
+        ambient.error,
     )
     return desired_relay_on
 
@@ -368,6 +482,7 @@ def run(
     sensor = (
         None if dry_run_temperature is not None else create_sensor(config.sensor_id)
     )
+    ambient_sensor = None if dry_run else create_i2c_sensor(config)
     relay_on = False
     stopping = False
 
@@ -385,6 +500,7 @@ def run(
                 relay,
                 current_relay_on=relay_on,
                 sensor=sensor,
+                ambient_sensor=ambient_sensor,
                 config=config,
                 dry_run_temperature=dry_run_temperature,
                 db_path=config.db_path,
@@ -435,6 +551,13 @@ def _optional_str(value) -> str | None:
         return None
     stripped = str(value).strip()
     return stripped or None
+
+
+def _parse_i2c_address(value) -> int:
+    """Parse an I2C address from TOML as either an int or a hex string."""
+    if isinstance(value, str):
+        return int(value, 0)
+    return int(value)
 
 
 def _relay_pins_from_config(relay: dict) -> tuple[int, ...]:

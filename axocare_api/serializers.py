@@ -14,6 +14,11 @@ def temperature_reading(row) -> TemperatureReading:
         relay_on=bool(row["relay_on"]),
         sensor_id=row["sensor_id"],
         error=row["error"],
+        aht20_temperature_c=row["aht20_temperature_c"],
+        aht20_humidity_percent=row["aht20_humidity_percent"],
+        bmp280_temperature_c=row["bmp280_temperature_c"],
+        bmp280_pressure_hpa=row["bmp280_pressure_hpa"],
+        ambient_error=row["ambient_error"],
     )
 
 

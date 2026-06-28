@@ -126,6 +126,10 @@ def test_dashboard_returns_current_history_and_relay_events(tmp_path: Path) -> N
         temperature_c=18.7,
         relay_on=True,
         sensor_id="test-sensor",
+        aht20_temperature_c=24.4,
+        aht20_humidity_percent=58.1,
+        bmp280_temperature_c=24.0,
+        bmp280_pressure_hpa=1007.6,
     )
     _insert_relay_event(
         db_path,
@@ -163,6 +167,11 @@ def test_dashboard_returns_current_history_and_relay_events(tmp_path: Path) -> N
         "relay_on": True,
         "sensor_id": "test-sensor",
         "error": None,
+        "aht20_temperature_c": 24.4,
+        "aht20_humidity_percent": 58.1,
+        "bmp280_temperature_c": 24.0,
+        "bmp280_pressure_hpa": 1007.6,
+        "ambient_error": None,
     }
     assert payload["readings"] == [payload["current"]]
     assert payload["relay_events"] == [
@@ -316,6 +325,11 @@ def _insert_temperature(
     relay_on: bool,
     sensor_id: str,
     error: str | None = None,
+    aht20_temperature_c: float | None = None,
+    aht20_humidity_percent: float | None = None,
+    bmp280_temperature_c: float | None = None,
+    bmp280_pressure_hpa: float | None = None,
+    ambient_error: str | None = None,
 ) -> None:
     with db.connect(db_path) as conn:
         conn.execute(
@@ -325,11 +339,27 @@ def _insert_temperature(
                 temperature_c,
                 relay_on,
                 sensor_id,
-                error
+                error,
+                aht20_temperature_c,
+                aht20_humidity_percent,
+                bmp280_temperature_c,
+                bmp280_pressure_hpa,
+                ambient_error
             )
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (recorded_at, temperature_c, int(relay_on), sensor_id, error),
+            (
+                recorded_at,
+                temperature_c,
+                int(relay_on),
+                sensor_id,
+                error,
+                aht20_temperature_c,
+                aht20_humidity_percent,
+                bmp280_temperature_c,
+                bmp280_pressure_hpa,
+                ambient_error,
+            ),
         )
         conn.commit()
 

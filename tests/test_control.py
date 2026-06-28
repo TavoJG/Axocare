@@ -93,6 +93,11 @@ path = "{tmp_path / "axocare.db"}"
 [temperature]
 notification_threshold_c = 21.5
 
+[i2c_sensor]
+enabled = true
+aht20_address = 0x38
+bmp280_address = "0x77"
+
 [pushover]
 app_token = "app-token"
 user_key = "user-key"
@@ -104,14 +109,67 @@ title = "Hot tank"
     config = control.ControlConfig.from_toml(config_path)
 
     assert config.notification_threshold_c == 21.5
+    assert config.i2c_sensor_enabled is True
+    assert config.aht20_address == 0x38
+    assert config.bmp280_address == 0x77
     assert config.pushover_app_token == "app-token"
     assert config.pushover_user_key == "user-key"
     assert config.pushover_title == "Hot tank"
 
 
-def _config(notification_threshold_c: float | None) -> control.ControlConfig:
+def test_control_once_records_ambient_telemetry(tmp_path: Path) -> None:
+    db_path = tmp_path / "ambient.db"
+    control.db.migrate(db_path)
+
+    relay_on = control.control_once(
+        None,
+        current_relay_on=False,
+        sensor=_FakeSensor(18.9, "tank-probe"),
+        ambient_sensor=_FakeAmbientSensor(),
+        config=_config(notification_threshold_c=None, db_path=str(db_path)),
+        dry_run_temperature=None,
+        db_path=db_path,
+    )
+
+    assert relay_on is True
+    row = control.db.latest_temperature(db_path=db_path)
+    assert row is not None
+    assert row["temperature_c"] == 18.9
+    assert row["relay_on"] == 1
+    assert row["sensor_id"] == "tank-probe"
+    assert row["aht20_temperature_c"] == 24.1
+    assert row["aht20_humidity_percent"] == 56.2
+    assert row["bmp280_temperature_c"] == 23.8
+    assert row["bmp280_pressure_hpa"] == 1009.4
+    assert row["ambient_error"] is None
+
+
+class _FakeSensor:
+    def __init__(self, temperature_c: float, sensor_id: str) -> None:
+        self._temperature_c = temperature_c
+        self.id = sensor_id
+
+    def get_temperature(self) -> float:
+        return self._temperature_c
+
+
+class _FakeAmbientSensor:
+    def read(self) -> control.AmbientReading:
+        return control.AmbientReading(
+            aht20_temperature_c=24.1,
+            aht20_humidity_percent=56.2,
+            bmp280_temperature_c=23.8,
+            bmp280_pressure_hpa=1009.4,
+        )
+
+
+def _config(
+    notification_threshold_c: float | None,
+    *,
+    db_path: str = ":memory:",
+) -> control.ControlConfig:
     return control.ControlConfig(
-        db_path=":memory:",
+        db_path=db_path,
         target_c=18.0,
         cooling_on_c=18.6,
         cooling_off_c=18.0,
@@ -120,6 +178,9 @@ def _config(notification_threshold_c: float | None) -> control.ControlConfig:
         relay_pin=26,
         relay_active_high=False,
         sensor_id=None,
+        i2c_sensor_enabled=False,
+        aht20_address=0x38,
+        bmp280_address=0x77,
         pushover_app_token="app-token",
         pushover_user_key="user-key",
         pushover_title="Axocare temperature alert",

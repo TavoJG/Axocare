@@ -3,12 +3,15 @@
 Axocare is a Raspberry Pi aquarium temperature controller. It reads a DS18B20
 temperature sensor, switches a cooling relay through GPIO, stores readings in
 SQLite, exposes a FastAPI JSON API, and serves a Vite/TypeScript dashboard for
-recent temperature history.
+recent temperature history. It can also persist ambient telemetry from a
+combined AHT20 + BMP280 I2C module.
 
 ## Hardware
 
 - Raspberry Pi with 1-Wire enabled
+- Raspberry Pi with I2C enabled when using the optional AHT20 + BMP280 module
 - DS18B20 temperature sensor on GPIO 4
+- Optional AHT20 (`0x38`) + BMP280 (`0x77`) combo module on the I2C bus
 - Waveshare RPi Relay Board using CH1 on BCM GPIO 26 / physical pin 37
   and CH2 on BCM GPIO 20 / physical pin 38
 - Cooling device connected through the relay
@@ -24,7 +27,8 @@ sudo apt update
 sudo apt install git python3-venv python3-rpi.gpio
 ```
 
-Enable 1-Wire with `sudo raspi-config`, then reboot.
+Enable 1-Wire and, if you will use the ambient module, I2C with
+`sudo raspi-config`, then reboot.
 
 Clone the repo and install Python dependencies:
 
@@ -68,6 +72,11 @@ pins = [26, 20]
 [sensor]
 id = ""
 
+[i2c_sensor]
+enabled = false
+aht20_address = 0x38
+bmp280_address = 0x77
+
 [pushover]
 app_token = ""
 user_key = ""
@@ -85,6 +94,10 @@ threshold. Add your Pushover application token and user key under `[pushover]`,
 or provide them with `PUSHOVER_APP_TOKEN` and `PUSHOVER_USER_KEY`.
 
 Leave `sensor.id` empty to use the first detected DS18B20 sensor.
+
+Set `i2c_sensor.enabled = true` to record ambient temperature, humidity, and
+pressure from the AHT20 + BMP280 module in the same `temperature_readings` row
+as the tank temperature and relay state.
 
 ## Camera Streaming
 
