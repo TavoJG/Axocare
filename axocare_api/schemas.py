@@ -16,7 +16,7 @@ class TemperatureReading(BaseModel):
     relay_on: bool
     sensor_id: str | None
     error: str | None
-    aht20_temperature_c: float | None
+    room_temperature: float | None
     aht20_humidity_percent: float | None
     bmp280_temperature_c: float | None
     bmp280_pressure_hpa: float | None

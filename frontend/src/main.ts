@@ -29,7 +29,7 @@ type TemperatureReading = {
   relay_on: boolean;
   sensor_id: string | null;
   error: string | null;
-  aht20_temperature_c: number | null;
+  room_temperature: number | null;
   aht20_humidity_percent: number | null;
   bmp280_temperature_c: number | null;
   bmp280_pressure_hpa: number | null;
@@ -72,7 +72,8 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 const SPAN_OPTIONS = [15, 30, 60, 180, 360, 720, 1440];
 const state = {
   spanMinutes: 60,
-  chart: null as Chart<"line", (number | null)[], string> | null,
+  temperatureChart: null as Chart<"line", (number | null)[], string> | null,
+  humidityChart: null as Chart<"line", (number | null)[], string> | null,
   refreshTimer: 0,
   cameraRetryTimer: 0,
   cameraRetryCount: 0
@@ -135,6 +136,19 @@ app.innerHTML = `
         </div>
       </section>
 
+      <section class="panel chart-panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Ambient humidity</p>
+            <h2 id="humidityChartTitle">Last hour</h2>
+          </div>
+        </div>
+        <div class="chart-frame">
+          <div id="humidityChartEmpty" class="empty" hidden>No humidity readings found for this time span.</div>
+          <canvas id="humidityChart" aria-label="Relative humidity history chart"></canvas>
+        </div>
+      </section>
+
       <section class="split">
         <div class="panel">
           <div class="panel-header">
@@ -149,7 +163,7 @@ app.innerHTML = `
                 <tr>
                   <th>Time</th>
                   <th>Tank Temp</th>
-                  <th>AHT20 Temp</th>
+                  <th>Room Temp</th>
                   <th>Humidity</th>
                   <th>BMP280 Temp</th>
                   <th>Pressure</th>
@@ -181,10 +195,13 @@ const refreshButton = document.querySelector<HTMLButtonElement>("#refreshButton"
 const status = document.querySelector<HTMLElement>("#status")!;
 const chartTitle = document.querySelector<HTMLElement>("#chartTitle")!;
 const chartEmpty = document.querySelector<HTMLElement>("#chartEmpty")!;
+const humidityChartTitle = document.querySelector<HTMLElement>("#humidityChartTitle")!;
+const humidityChartEmpty = document.querySelector<HTMLElement>("#humidityChartEmpty")!;
 const lastUpdated = document.querySelector<HTMLElement>("#lastUpdated")!;
 const readingsBody = document.querySelector<HTMLTableSectionElement>("#readingsBody")!;
 const eventsList = document.querySelector<HTMLElement>("#eventsList")!;
-const chartCanvas = document.querySelector<HTMLCanvasElement>("#temperatureChart")!;
+const temperatureChartCanvas = document.querySelector<HTMLCanvasElement>("#temperatureChart")!;
+const humidityChartCanvas = document.querySelector<HTMLCanvasElement>("#humidityChart")!;
 const cameraPanel = document.querySelector<HTMLElement>("#cameraPanel")!;
 const cameraMeta = document.querySelector<HTMLElement>("#cameraMeta")!;
 const cameraStream = document.querySelector<HTMLImageElement>("#cameraStream")!;
@@ -242,10 +259,12 @@ async function loadDashboard(): Promise<void> {
 function renderDashboard(payload: DashboardResponse): void {
   renderStatus(payload);
   renderCamera(payload.settings);
-  renderChart(payload);
+  renderTemperatureChart(payload);
+  renderHumidityChart(payload);
   renderReadings(payload.readings);
   renderEvents(payload.relay_events);
   chartTitle.textContent = `Last ${formatSpan(payload.span_minutes).toLowerCase()}`;
+  humidityChartTitle.textContent = `Last ${formatSpan(payload.span_minutes).toLowerCase()}`;
   lastUpdated.textContent = `Updated ${formatTime(new Date().toISOString())}`;
 }
 
@@ -314,9 +333,10 @@ function renderStatus(payload: DashboardResponse): void {
   }
 }
 
-function renderChart(payload: DashboardResponse): void {
+function renderTemperatureChart(payload: DashboardResponse): void {
   const labels = payload.readings.map((reading) => formatTime(reading.recorded_at));
-  const temperatures = payload.readings.map((reading) => reading.temperature_c);
+  const tankTemperatures = payload.readings.map((reading) => reading.temperature_c);
+  const roomTemperatures = payload.readings.map((reading) => reading.room_temperature);
   const target = payload.readings.map(() => payload.settings.target_c);
   const coolingOn = payload.readings.map(() => payload.settings.cooling_on_c);
   const coolingOff = payload.readings.map(() => payload.settings.cooling_off_c);
@@ -327,44 +347,56 @@ function renderChart(payload: DashboardResponse): void {
       : payload.readings.map(() => threshold);
 
   chartEmpty.hidden = payload.readings.length > 0;
-  chartCanvas.hidden = payload.readings.length === 0;
+  temperatureChartCanvas.hidden = payload.readings.length === 0;
 
   if (payload.readings.length === 0) {
-    state.chart?.destroy();
-    state.chart = null;
+    state.temperatureChart?.destroy();
+    state.temperatureChart = null;
     return;
   }
 
-  if (state.chart) {
-    state.chart.data.labels = labels;
-    state.chart.data.datasets[0].data = temperatures;
-    state.chart.data.datasets[1].data = target;
-    state.chart.data.datasets[2].data = coolingOn;
-    state.chart.data.datasets[3].data = coolingOff;
+  if (state.temperatureChart) {
+    state.temperatureChart.data.labels = labels;
+    state.temperatureChart.data.datasets[0].data = tankTemperatures;
+    state.temperatureChart.data.datasets[1].data = roomTemperatures;
+    state.temperatureChart.data.datasets[2].data = target;
+    state.temperatureChart.data.datasets[3].data = coolingOn;
+    state.temperatureChart.data.datasets[4].data = coolingOff;
     if (notificationThreshold == null) {
-      state.chart.data.datasets = state.chart.data.datasets.slice(0, 4);
-    } else if (state.chart.data.datasets[4]) {
-      state.chart.data.datasets[4].data = notificationThreshold;
+      state.temperatureChart.data.datasets = state.temperatureChart.data.datasets.slice(0, 5);
+    } else if (state.temperatureChart.data.datasets[5]) {
+      state.temperatureChart.data.datasets[5].data = notificationThreshold;
     } else {
-      state.chart.data.datasets.push(
+      state.temperatureChart.data.datasets.push(
         thresholdDataset("Notify above", notificationThreshold, "#7c3aed")
       );
     }
-    state.chart.update();
+    state.temperatureChart.update();
     return;
   }
 
-  state.chart = new Chart(chartCanvas, {
+  state.temperatureChart = new Chart(temperatureChartCanvas, {
     type: "line",
     data: {
       labels,
       datasets: [
         {
-          label: "Temperature C",
-          data: temperatures,
+          label: "Tank temperature",
+          data: tankTemperatures,
           borderColor: "#0f766e",
           backgroundColor: "rgba(15, 118, 110, 0.12)",
           fill: true,
+          tension: 0.3,
+          pointRadius: 2,
+          pointHoverRadius: 5,
+          spanGaps: false
+        },
+        {
+          label: "Room temperature",
+          data: roomTemperatures,
+          borderColor: "#1d4ed8",
+          backgroundColor: "rgba(29, 78, 216, 0.08)",
+          fill: false,
           tension: 0.3,
           pointRadius: 2,
           pointHoverRadius: 5,
@@ -427,6 +459,95 @@ function renderChart(payload: DashboardResponse): void {
   });
 }
 
+function renderHumidityChart(payload: DashboardResponse): void {
+  const labels = payload.readings.map((reading) => formatTime(reading.recorded_at));
+  const humidity = payload.readings.map(
+    (reading) => reading.aht20_humidity_percent
+  );
+
+  humidityChartEmpty.hidden = payload.readings.length > 0;
+  humidityChartCanvas.hidden = payload.readings.length === 0;
+
+  if (payload.readings.length === 0) {
+    state.humidityChart?.destroy();
+    state.humidityChart = null;
+    return;
+  }
+
+  if (state.humidityChart) {
+    state.humidityChart.data.labels = labels;
+    state.humidityChart.data.datasets[0].data = humidity;
+    state.humidityChart.update();
+    return;
+  }
+
+  state.humidityChart = new Chart(humidityChartCanvas, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Relative humidity",
+          data: humidity,
+          borderColor: "#0f766e",
+          backgroundColor: "rgba(15, 118, 110, 0.12)",
+          fill: true,
+          tension: 0.3,
+          pointRadius: 2,
+          pointHoverRadius: 5,
+          spanGaps: false
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        intersect: false,
+        mode: "index"
+      },
+      plugins: {
+        legend: {
+          labels: {
+            boxWidth: 12,
+            color: "#24323a",
+            usePointStyle: true
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label(context) {
+              const value = context.parsed.y;
+              return `${context.dataset.label}: ${value != null && Number.isFinite(value) ? value.toFixed(1) : "No data"} %`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: {
+            color: "rgba(36, 50, 58, 0.08)"
+          },
+          ticks: {
+            autoSkip: true,
+            maxTicksLimit: 8,
+            color: "#5f6f76"
+          }
+        },
+        y: {
+          grid: {
+            color: "rgba(36, 50, 58, 0.08)"
+          },
+          ticks: {
+            color: "#5f6f76",
+            callback: (value) => `${value} %`
+          }
+        }
+      }
+    }
+  });
+}
+
 function renderReadings(readings: TemperatureReading[]): void {
   const rows = readings.slice(-12).reverse();
 
@@ -439,7 +560,7 @@ function renderReadings(readings: TemperatureReading[]): void {
         <tr>
           <td>${formatTime(reading.recorded_at)}</td>
           <td>${formatTemperature(reading.temperature_c)}</td>
-          <td>${formatTemperature(reading.aht20_temperature_c)}</td>
+          <td>${formatTemperature(reading.room_temperature)}</td>
           <td>${formatPercent(reading.aht20_humidity_percent)}</td>
           <td>${formatTemperature(reading.bmp280_temperature_c)}</td>
           <td>${formatPressure(reading.bmp280_pressure_hpa)}</td>

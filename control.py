@@ -46,7 +46,7 @@ class SensorReading:
 class AmbientReading:
     """Ambient telemetry returned by the optional AHT20 + BMP280 I2C module."""
 
-    aht20_temperature_c: float | None = None
+    room_temperature: float | None = None
     aht20_humidity_percent: float | None = None
     bmp280_temperature_c: float | None = None
     bmp280_pressure_hpa: float | None = None
@@ -252,7 +252,7 @@ class CombinedI2CSensor:
         if self._init_error:
             return AmbientReading(error=self._init_error)
 
-        aht20_temperature_c = None
+        room_temperature = None
         aht20_humidity_percent = None
         bmp280_temperature_c = None
         bmp280_pressure_hpa = None
@@ -260,7 +260,7 @@ class CombinedI2CSensor:
 
         if self._aht20 is not None:
             try:
-                aht20_temperature_c = float(self._aht20.temperature)
+                room_temperature = float(self._aht20.temperature)
                 aht20_humidity_percent = float(self._aht20.relative_humidity)
             except Exception as exc:
                 errors.append(f"aht20_read_error: {exc}")
@@ -273,7 +273,7 @@ class CombinedI2CSensor:
                 errors.append(f"bmp280_read_error: {exc}")
 
         return AmbientReading(
-            aht20_temperature_c=aht20_temperature_c,
+            room_temperature=room_temperature,
             aht20_humidity_percent=aht20_humidity_percent,
             bmp280_temperature_c=bmp280_temperature_c,
             bmp280_pressure_hpa=bmp280_pressure_hpa,
@@ -424,7 +424,7 @@ def control_once(
         desired_relay_on,
         sensor_id=reading.sensor_id,
         error=reading.error,
-        aht20_temperature_c=ambient.aht20_temperature_c,
+        room_temperature=ambient.room_temperature,
         aht20_humidity_percent=ambient.aht20_humidity_percent,
         bmp280_temperature_c=ambient.bmp280_temperature_c,
         bmp280_pressure_hpa=ambient.bmp280_pressure_hpa,
@@ -452,7 +452,7 @@ def control_once(
         "temperature=%s relay_on=%s aht20_temp=%s humidity=%s bmp280_temp=%s pressure=%s error=%s ambient_error=%s",
         reading.temperature_c,
         desired_relay_on,
-        ambient.aht20_temperature_c,
+        ambient.room_temperature,
         ambient.aht20_humidity_percent,
         ambient.bmp280_temperature_c,
         ambient.bmp280_pressure_hpa,

@@ -137,7 +137,7 @@ def test_control_once_records_ambient_telemetry(tmp_path: Path) -> None:
     assert row["temperature_c"] == 18.9
     assert row["relay_on"] == 1
     assert row["sensor_id"] == "tank-probe"
-    assert row["aht20_temperature_c"] == 24.1
+    assert row["room_temperature"] == 24.1
     assert row["aht20_humidity_percent"] == 56.2
     assert row["bmp280_temperature_c"] == 23.8
     assert row["bmp280_pressure_hpa"] == 1009.4
@@ -156,7 +156,7 @@ class _FakeSensor:
 class _FakeAmbientSensor:
     def read(self) -> control.AmbientReading:
         return control.AmbientReading(
-            aht20_temperature_c=24.1,
+            room_temperature=24.1,
             aht20_humidity_percent=56.2,
             bmp280_temperature_c=23.8,
             bmp280_pressure_hpa=1009.4,
