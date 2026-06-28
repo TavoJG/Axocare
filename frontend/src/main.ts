@@ -336,7 +336,6 @@ function renderStatus(payload: DashboardResponse): void {
 function renderTemperatureChart(payload: DashboardResponse): void {
   const labels = payload.readings.map((reading) => formatTime(reading.recorded_at));
   const tankTemperatures = payload.readings.map((reading) => reading.temperature_c);
-  const roomTemperatures = payload.readings.map((reading) => reading.room_temperature);
   const target = payload.readings.map(() => payload.settings.target_c);
   const coolingOn = payload.readings.map(() => payload.settings.cooling_on_c);
   const coolingOff = payload.readings.map(() => payload.settings.cooling_off_c);
@@ -358,14 +357,13 @@ function renderTemperatureChart(payload: DashboardResponse): void {
   if (state.temperatureChart) {
     state.temperatureChart.data.labels = labels;
     state.temperatureChart.data.datasets[0].data = tankTemperatures;
-    state.temperatureChart.data.datasets[1].data = roomTemperatures;
-    state.temperatureChart.data.datasets[2].data = target;
-    state.temperatureChart.data.datasets[3].data = coolingOn;
-    state.temperatureChart.data.datasets[4].data = coolingOff;
+    state.temperatureChart.data.datasets[1].data = target;
+    state.temperatureChart.data.datasets[2].data = coolingOn;
+    state.temperatureChart.data.datasets[3].data = coolingOff;
     if (notificationThreshold == null) {
-      state.temperatureChart.data.datasets = state.temperatureChart.data.datasets.slice(0, 5);
-    } else if (state.temperatureChart.data.datasets[5]) {
-      state.temperatureChart.data.datasets[5].data = notificationThreshold;
+      state.temperatureChart.data.datasets = state.temperatureChart.data.datasets.slice(0, 4);
+    } else if (state.temperatureChart.data.datasets[4]) {
+      state.temperatureChart.data.datasets[4].data = notificationThreshold;
     } else {
       state.temperatureChart.data.datasets.push(
         thresholdDataset("Notify above", notificationThreshold, "#7c3aed")
@@ -386,17 +384,6 @@ function renderTemperatureChart(payload: DashboardResponse): void {
           borderColor: "#0f766e",
           backgroundColor: "rgba(15, 118, 110, 0.12)",
           fill: true,
-          tension: 0.3,
-          pointRadius: 2,
-          pointHoverRadius: 5,
-          spanGaps: false
-        },
-        {
-          label: "Room temperature",
-          data: roomTemperatures,
-          borderColor: "#1d4ed8",
-          backgroundColor: "rgba(29, 78, 216, 0.08)",
-          fill: false,
           tension: 0.3,
           pointRadius: 2,
           pointHoverRadius: 5,
@@ -461,9 +448,8 @@ function renderTemperatureChart(payload: DashboardResponse): void {
 
 function renderHumidityChart(payload: DashboardResponse): void {
   const labels = payload.readings.map((reading) => formatTime(reading.recorded_at));
-  const humidity = payload.readings.map(
-    (reading) => reading.aht20_humidity_percent
-  );
+  const humidity = payload.readings.map((reading) => reading.aht20_humidity_percent);
+  const roomTemperature = payload.readings.map((reading) => reading.room_temperature);
 
   humidityChartEmpty.hidden = payload.readings.length > 0;
   humidityChartCanvas.hidden = payload.readings.length === 0;
@@ -477,6 +463,7 @@ function renderHumidityChart(payload: DashboardResponse): void {
   if (state.humidityChart) {
     state.humidityChart.data.labels = labels;
     state.humidityChart.data.datasets[0].data = humidity;
+    state.humidityChart.data.datasets[1].data = roomTemperature;
     state.humidityChart.update();
     return;
   }
@@ -496,6 +483,18 @@ function renderHumidityChart(payload: DashboardResponse): void {
           pointRadius: 2,
           pointHoverRadius: 5,
           spanGaps: false
+        },
+        {
+          label: "Room temperature",
+          data: roomTemperature,
+          borderColor: "#1d4ed8",
+          backgroundColor: "rgba(29, 78, 216, 0.08)",
+          fill: false,
+          tension: 0.3,
+          pointRadius: 2,
+          pointHoverRadius: 5,
+          spanGaps: false,
+          yAxisID: "yTemp"
         }
       ]
     },
@@ -518,6 +517,9 @@ function renderHumidityChart(payload: DashboardResponse): void {
           callbacks: {
             label(context) {
               const value = context.parsed.y;
+              if (context.dataset.yAxisID === "yTemp") {
+                return `${context.dataset.label}: ${value != null && Number.isFinite(value) ? value.toFixed(2) : "No data"} C`;
+              }
               return `${context.dataset.label}: ${value != null && Number.isFinite(value) ? value.toFixed(1) : "No data"} %`;
             }
           }
@@ -541,6 +543,16 @@ function renderHumidityChart(payload: DashboardResponse): void {
           ticks: {
             color: "#5f6f76",
             callback: (value) => `${value} %`
+          }
+        },
+        yTemp: {
+          position: "right",
+          grid: {
+            drawOnChartArea: false
+          },
+          ticks: {
+            color: "#1d4ed8",
+            callback: (value) => `${value} C`
           }
         }
       }
