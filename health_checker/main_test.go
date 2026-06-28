@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -35,7 +36,7 @@ func TestCheckHealthDoesNotNotifyWhenEverythingIsHealthy(t *testing.T) {
 		}),
 	}
 
-	err := CheckHealth(context.Background(), client, healthURL, validPushoverConfig())
+	err := checkHealth(context.Background(), client, healthURL, validPushoverConfig(), "", time.Date(2026, 6, 27, 19, 0, 0, 0, time.UTC), defaultReminderInterval)
 
 	if err != nil {
 		t.Fatalf("CheckHealth returned error: %v", err)
@@ -48,7 +49,7 @@ func TestCheckHealthDoesNotNotifyWhenEverythingIsHealthy(t *testing.T) {
 func TestCheckHealthWithStateNotifiesWhenHealthRecovers(t *testing.T) {
 	healthURL := "http://axocare.test/api/health"
 	statePath := filepath.Join(t.TempDir(), "state.json")
-	if err := writeHealthState(statePath, false); err != nil {
+	if err := writeHealthState(statePath, HealthCheckState{Healthy: false, Failure: "api_request:dns"}); err != nil {
 		t.Fatalf("failed to write starting state: %v", err)
 	}
 
@@ -67,7 +68,7 @@ func TestCheckHealthWithStateNotifiesWhenHealthRecovers(t *testing.T) {
 		}),
 	}
 
-	err := CheckHealthWithState(context.Background(), client, healthURL, validPushoverConfig(), statePath)
+	err := checkHealth(context.Background(), client, healthURL, validPushoverConfig(), statePath, time.Date(2026, 6, 27, 19, 0, 0, 0, time.UTC), defaultReminderInterval)
 
 	if err != nil {
 		t.Fatalf("CheckHealthWithState returned error: %v", err)
@@ -99,7 +100,8 @@ func TestCheckHealthWithStateRecordsFailure(t *testing.T) {
 		}),
 	}
 
-	err := CheckHealthWithState(context.Background(), client, healthURL, validPushoverConfig(), statePath)
+	now := time.Date(2026, 6, 27, 19, 0, 0, 0, time.UTC)
+	err := checkHealth(context.Background(), client, healthURL, validPushoverConfig(), statePath, now, defaultReminderInterval)
 
 	if err != nil {
 		t.Fatalf("CheckHealthWithState returned error: %v", err)
@@ -110,6 +112,12 @@ func TestCheckHealthWithStateRecordsFailure(t *testing.T) {
 	}
 	if state == nil || state.Healthy {
 		t.Fatalf("expected unhealthy state after failure, got %#v", state)
+	}
+	if state.Failure != "control_status:stale" {
+		t.Fatalf("expected failure signature to be recorded, got %#v", state)
+	}
+	if !state.LastNotifiedAt.Equal(now) {
+		t.Fatalf("expected last notified time to be recorded, got %#v", state)
 	}
 }
 
@@ -130,7 +138,7 @@ func TestCheckHealthNotifiesWhenControlIsStale(t *testing.T) {
 		}),
 	}
 
-	err := CheckHealth(context.Background(), client, healthURL, validPushoverConfig())
+	err := checkHealth(context.Background(), client, healthURL, validPushoverConfig(), "", time.Date(2026, 6, 27, 19, 0, 0, 0, time.UTC), defaultReminderInterval)
 
 	if err != nil {
 		t.Fatalf("CheckHealth returned error: %v", err)
@@ -164,7 +172,7 @@ func TestCheckHealthNotifiesWhenHealthRequestFails(t *testing.T) {
 		}),
 	}
 
-	err := CheckHealth(context.Background(), client, healthURL, validPushoverConfig())
+	err := checkHealth(context.Background(), client, healthURL, validPushoverConfig(), "", time.Date(2026, 6, 27, 19, 0, 0, 0, time.UTC), defaultReminderInterval)
 
 	if err != nil {
 		t.Fatalf("CheckHealth returned error: %v", err)
@@ -174,7 +182,70 @@ func TestCheckHealthNotifiesWhenHealthRequestFails(t *testing.T) {
 		t.Fatalf("expected API failure message, got %q", message)
 	}
 	if !strings.Contains(message, "connection refused") {
+		t.Fatalf("expected classified failure detail in message, got %q", message)
+	}
+	if !strings.Contains(message, "connection refused") {
 		t.Fatalf("expected connection error in message, got %q", message)
+	}
+}
+
+func TestCheckHealthWithStateSuppressesRepeatedFailureNotifications(t *testing.T) {
+	healthURL := "http://axocare.test/api/health"
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	notifications := 0
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.String() == pushoverAPIURL {
+				notifications++
+				return response(http.StatusOK, "{}"), nil
+			}
+
+			return nil, errors.New("dial tcp: lookup axocare.jigue.local on 127.0.0.53:53: no such host")
+		}),
+	}
+
+	start := time.Date(2026, 6, 27, 19, 0, 0, 0, time.UTC)
+	if err := checkHealth(context.Background(), client, healthURL, validPushoverConfig(), statePath, start, defaultReminderInterval); err != nil {
+		t.Fatalf("first CheckHealthWithState returned error: %v", err)
+	}
+	if err := checkHealth(context.Background(), client, healthURL, validPushoverConfig(), statePath, start.Add(5*time.Minute), defaultReminderInterval); err != nil {
+		t.Fatalf("second CheckHealthWithState returned error: %v", err)
+	}
+
+	if notifications != 1 {
+		t.Fatalf("expected exactly one notification for repeated failure, got %d", notifications)
+	}
+}
+
+func TestCheckHealthWithStateNotifiesWhenFailureTypeChanges(t *testing.T) {
+	healthURL := "http://axocare.test/api/health"
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	notifications := 0
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.String() == pushoverAPIURL {
+				notifications++
+				return response(http.StatusOK, "{}"), nil
+			}
+
+			if notifications == 0 {
+				return nil, errors.New("dial tcp: lookup axocare.jigue.local on 127.0.0.53:53: no such host")
+			}
+
+			return nil, errors.New("connection refused")
+		}),
+	}
+
+	start := time.Date(2026, 6, 27, 19, 0, 0, 0, time.UTC)
+	if err := checkHealth(context.Background(), client, healthURL, validPushoverConfig(), statePath, start, defaultReminderInterval); err != nil {
+		t.Fatalf("first CheckHealthWithState returned error: %v", err)
+	}
+	if err := checkHealth(context.Background(), client, healthURL, validPushoverConfig(), statePath, start.Add(5*time.Minute), defaultReminderInterval); err != nil {
+		t.Fatalf("second CheckHealthWithState returned error: %v", err)
+	}
+
+	if notifications != 2 {
+		t.Fatalf("expected notifications for each failure type change, got %d", notifications)
 	}
 }
 
@@ -186,13 +257,69 @@ func TestCheckHealthReturnsErrorWhenNotificationCredentialsAreMissing(t *testing
 		}),
 	}
 
-	err := CheckHealth(context.Background(), client, healthURL, PushoverConfig{})
+	err := checkHealth(context.Background(), client, healthURL, PushoverConfig{}, "", time.Date(2026, 6, 27, 19, 0, 0, 0, time.UTC), defaultReminderInterval)
 
 	if err == nil {
 		t.Fatal("expected missing credentials error")
 	}
 	if !strings.Contains(err.Error(), "Pushover credentials are missing") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestCheckHealthWithStateSendsReminderAfterTwentyMinutes(t *testing.T) {
+	healthURL := "http://axocare.test/api/health"
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	notifications := 0
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.String() == pushoverAPIURL {
+				notifications++
+				return response(http.StatusOK, "{}"), nil
+			}
+
+			return nil, errors.New("dial tcp: lookup axocare.jigue.local on 127.0.0.53:53: no such host")
+		}),
+	}
+
+	start := time.Date(2026, 6, 27, 19, 0, 0, 0, time.UTC)
+	if err := checkHealth(context.Background(), client, healthURL, validPushoverConfig(), statePath, start, defaultReminderInterval); err != nil {
+		t.Fatalf("first CheckHealthWithState returned error: %v", err)
+	}
+	if err := checkHealth(context.Background(), client, healthURL, validPushoverConfig(), statePath, start.Add(20*time.Minute), defaultReminderInterval); err != nil {
+		t.Fatalf("second CheckHealthWithState returned error: %v", err)
+	}
+
+	if notifications != 2 {
+		t.Fatalf("expected a reminder notification after twenty minutes, got %d", notifications)
+	}
+}
+
+func TestCheckHealthWithStateDoesNotSendReminderBeforeTwentyMinutes(t *testing.T) {
+	healthURL := "http://axocare.test/api/health"
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	notifications := 0
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.String() == pushoverAPIURL {
+				notifications++
+				return response(http.StatusOK, "{}"), nil
+			}
+
+			return nil, errors.New("dial tcp: lookup axocare.jigue.local on 127.0.0.53:53: no such host")
+		}),
+	}
+
+	start := time.Date(2026, 6, 27, 19, 0, 0, 0, time.UTC)
+	if err := checkHealth(context.Background(), client, healthURL, validPushoverConfig(), statePath, start, defaultReminderInterval); err != nil {
+		t.Fatalf("first CheckHealthWithState returned error: %v", err)
+	}
+	if err := checkHealth(context.Background(), client, healthURL, validPushoverConfig(), statePath, start.Add(19*time.Minute+59*time.Second), defaultReminderInterval); err != nil {
+		t.Fatalf("second CheckHealthWithState returned error: %v", err)
+	}
+
+	if notifications != 1 {
+		t.Fatalf("expected no reminder before twenty minutes, got %d", notifications)
 	}
 }
 

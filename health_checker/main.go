@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -18,9 +19,10 @@ import (
 )
 
 const (
-	defaultHealthURL = "http://127.0.0.1:8000/api/health"
-	defaultStatePath = ".health-checker-state.json"
-	pushoverAPIURL   = "https://api.pushover.net/1/messages.json"
+	defaultHealthURL        = "http://127.0.0.1:8000/api/health"
+	defaultStatePath        = ".health-checker-state.json"
+	defaultReminderInterval = 20 * time.Minute
+	pushoverAPIURL          = "https://api.pushover.net/1/messages.json"
 )
 
 type HealthResponse struct {
@@ -46,7 +48,9 @@ type PushoverConfig struct {
 }
 
 type HealthCheckState struct {
-	Healthy bool `json:"healthy"`
+	Healthy        bool      `json:"healthy"`
+	Failure        string    `json:"failure,omitempty"`
+	LastNotifiedAt time.Time `json:"last_notified_at,omitempty"`
 }
 
 func main() {
@@ -59,13 +63,17 @@ func main() {
 
 	healthURL := getenv("AXOCARE_HEALTH_URL", defaultHealthURL)
 	statePath := getenv("AXOCARE_HEALTH_STATE_FILE", defaultStatePath)
+	reminderInterval, err := getenvDuration("AXOCARE_HEALTH_REMINDER_INTERVAL", defaultReminderInterval)
+	if err != nil {
+		log.Fatal(err)
+	}
 	pushover := PushoverConfig{
 		AppToken: os.Getenv("PUSHOVER_APP_TOKEN"),
 		UserKey:  os.Getenv("PUSHOVER_USER_KEY"),
 		Title:    getenv("PUSHOVER_TITLE", "Axocare health alert"),
 	}
 
-	if err := CheckHealthWithState(ctx, http.DefaultClient, healthURL, pushover, statePath); err != nil {
+	if err := checkHealth(ctx, http.DefaultClient, healthURL, pushover, statePath, time.Now(), reminderInterval); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -76,7 +84,7 @@ func CheckHealth(
 	healthURL string,
 	pushover PushoverConfig,
 ) error {
-	return checkHealth(ctx, client, healthURL, pushover, "")
+	return checkHealth(ctx, client, healthURL, pushover, "", time.Now(), defaultReminderInterval)
 }
 
 func CheckHealthWithState(
@@ -86,7 +94,7 @@ func CheckHealthWithState(
 	pushover PushoverConfig,
 	statePath string,
 ) error {
-	return checkHealth(ctx, client, healthURL, pushover, statePath)
+	return checkHealth(ctx, client, healthURL, pushover, statePath, time.Now(), defaultReminderInterval)
 }
 
 func checkHealth(
@@ -95,36 +103,27 @@ func checkHealth(
 	healthURL string,
 	pushover PushoverConfig,
 	statePath string,
+	now time.Time,
+	reminderInterval time.Duration,
 ) error {
-	health, err := fetchHealth(ctx, client, healthURL)
-	if err != nil {
-		message := fmt.Sprintf("Axocare API health check failed: %v", err)
-		if err := notifyPushover(ctx, client, pushover, message); err != nil {
-			return err
-		}
-		return writeHealthState(statePath, false)
-	}
-
-	if health.Status != "ok" {
-		message := fmt.Sprintf("Axocare API status is %q.", health.Status)
-		if err := notifyPushover(ctx, client, pushover, message); err != nil {
-			return err
-		}
-		return writeHealthState(statePath, false)
-	}
-
-	if health.Control.Status != "ok" {
-		message := controlProblemMessage(health.Control)
-		if err := notifyPushover(ctx, client, pushover, message); err != nil {
-			return err
-		}
-		return writeHealthState(statePath, false)
-	}
-
 	previousState, err := readHealthState(statePath)
 	if err != nil {
 		return err
 	}
+
+	health, err := fetchHealth(ctx, client, healthURL)
+	if err != nil {
+		return handleFailure(ctx, client, pushover, statePath, previousState, apiFailureDetails(err), now, reminderInterval)
+	}
+
+	if health.Status != "ok" {
+		return handleFailure(ctx, client, pushover, statePath, previousState, apiStatusFailureDetails(health.Status), now, reminderInterval)
+	}
+
+	if health.Control.Status != "ok" {
+		return handleFailure(ctx, client, pushover, statePath, previousState, controlFailureDetails(health.Control), now, reminderInterval)
+	}
+
 	if previousState != nil && !previousState.Healthy {
 		message := "Axocare health check recovered; API and control loop are ok."
 		if err := notifyPushover(ctx, client, pushover, message); err != nil {
@@ -132,7 +131,7 @@ func checkHealth(
 		}
 	}
 
-	return writeHealthState(statePath, true)
+	return writeHealthState(statePath, HealthCheckState{Healthy: true})
 }
 
 func fetchHealth(ctx context.Context, client *http.Client, healthURL string) (*HealthResponse, error) {
@@ -180,6 +179,120 @@ func controlProblemMessage(control ControlHealth) string {
 	}
 
 	return strings.Join(parts, " ")
+}
+
+type failureDetails struct {
+	Signature string
+	Message   string
+}
+
+func handleFailure(
+	ctx context.Context,
+	client *http.Client,
+	pushover PushoverConfig,
+	statePath string,
+	previousState *HealthCheckState,
+	failure failureDetails,
+	now time.Time,
+	reminderInterval time.Duration,
+) error {
+	shouldNotify := shouldNotifyFailure(previousState, failure.Signature, now, reminderInterval)
+	lastNotifiedAt := previousStateLastNotifiedAt(previousState)
+	if shouldNotify {
+		if err := notifyPushover(ctx, client, pushover, failure.Message); err != nil {
+			return err
+		}
+		lastNotifiedAt = now.UTC()
+	}
+
+	return writeHealthState(statePath, HealthCheckState{
+		Healthy:        false,
+		Failure:        failure.Signature,
+		LastNotifiedAt: lastNotifiedAt,
+	})
+}
+
+func shouldNotifyFailure(
+	previousState *HealthCheckState,
+	signature string,
+	now time.Time,
+	reminderInterval time.Duration,
+) bool {
+	if previousState == nil {
+		return true
+	}
+	if previousState.Healthy {
+		return true
+	}
+	if previousState.Failure != signature {
+		return true
+	}
+	if reminderInterval <= 0 {
+		return false
+	}
+	if previousState.LastNotifiedAt.IsZero() {
+		return true
+	}
+	return !now.Before(previousState.LastNotifiedAt.Add(reminderInterval))
+}
+
+func previousStateLastNotifiedAt(previousState *HealthCheckState) time.Time {
+	if previousState == nil {
+		return time.Time{}
+	}
+	return previousState.LastNotifiedAt
+}
+
+func apiFailureDetails(err error) failureDetails {
+	kind, description := classifyRequestError(err)
+	return failureDetails{
+		Signature: "api_request:" + kind,
+		Message:   fmt.Sprintf("Axocare API health check failed (%s): %v", description, err),
+	}
+}
+
+func apiStatusFailureDetails(status string) failureDetails {
+	return failureDetails{
+		Signature: "api_status:" + status,
+		Message:   fmt.Sprintf("Axocare API status is %q.", status),
+	}
+}
+
+func controlFailureDetails(control ControlHealth) failureDetails {
+	signatureParts := []string{"control_status", control.Status}
+	if control.LastError != nil && *control.LastError != "" {
+		signatureParts = append(signatureParts, *control.LastError)
+	}
+
+	return failureDetails{
+		Signature: strings.Join(signatureParts, ":"),
+		Message:   controlProblemMessage(control),
+	}
+}
+
+func classifyRequestError(err error) (kind string, description string) {
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return "dns", "DNS lookup failed"
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return "timeout", "request timed out"
+	}
+
+	message := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(message, "no such host"):
+		return "dns", "DNS lookup failed"
+	case strings.Contains(message, "connection refused"):
+		return "connection_refused", "connection refused"
+	case strings.Contains(message, "context deadline exceeded"),
+		strings.Contains(message, "i/o timeout"):
+		return "timeout", "request timed out"
+	default:
+		return "request_error", "request error"
+	}
 }
 
 func notifyPushover(
@@ -244,18 +357,35 @@ func readHealthState(path string) (*HealthCheckState, error) {
 	return &state, nil
 }
 
-func writeHealthState(path string, healthy bool) error {
+func writeHealthState(path string, state HealthCheckState) error {
 	if path == "" {
 		return nil
 	}
 
-	body, err := json.MarshalIndent(HealthCheckState{Healthy: healthy}, "", "  ")
+	body, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err
 	}
 	body = append(body, '\n')
 
 	return os.WriteFile(path, body, 0o600)
+}
+
+func getenvDuration(key string, fallback time.Duration) (time.Duration, error) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback, nil
+	}
+
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("parse %s: %w", key, err)
+	}
+	if duration < 0 {
+		return 0, fmt.Errorf("parse %s: duration must be zero or greater", key)
+	}
+
+	return duration, nil
 }
 
 func getenv(name string, fallback string) string {
