@@ -24,6 +24,7 @@ class ApiSettings(BaseModel):
     notification_threshold_c: float | None
     interval_seconds: int
     camera_enabled: bool = False
+    camera_stream_url: str | None = None
     camera_device: str = "0"
     camera_width: int = 640
     camera_height: int = 480
@@ -50,6 +51,7 @@ class ApiSettings(BaseModel):
             ),
             interval_seconds=int(control.get("interval_seconds", 60)),
             camera_enabled=bool(camera.get("enabled", False)),
+            camera_stream_url=_optional_str(camera.get("stream_url")),
             camera_device=str(camera.get("device", "0")),
             camera_width=int(camera.get("width", 640)),
             camera_height=int(camera.get("height", 480)),
@@ -63,3 +65,11 @@ def _optional_float(value) -> float | None:
     if value is None or value == "":
         return None
     return float(value)
+
+
+def _optional_str(value) -> str | None:
+    """Return a string while treating blanks as disabled."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None

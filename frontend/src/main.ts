@@ -52,6 +52,7 @@ type ApiSettings = {
   notification_threshold_c: number | null;
   interval_seconds: number;
   camera_enabled: boolean;
+  camera_stream_url: string | null;
   camera_device: string;
   camera_width: number;
   camera_height: number;
@@ -226,7 +227,10 @@ cameraStream.addEventListener("error", () => {
 });
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden && !cameraPanel.hidden) {
-    startCameraStream();
+    const streamUrl = cameraStream.dataset.streamUrl;
+    if (streamUrl) {
+      startCameraStream(streamUrl);
+    }
   }
 });
 
@@ -272,21 +276,35 @@ function renderCamera(settings: ApiSettings): void {
   cameraPanel.hidden = !settings.camera_enabled;
   if (!settings.camera_enabled) {
     cameraStream.removeAttribute("src");
+    delete cameraStream.dataset.streamUrl;
     cameraError.hidden = true;
     return;
   }
 
   cameraMeta.textContent = `${settings.camera_width}x${settings.camera_height} at ${settings.camera_fps} fps`;
-  if (!cameraStream.src) {
-    startCameraStream();
+  if (!settings.camera_stream_url) {
+    delete cameraStream.dataset.streamUrl;
+    cameraError.textContent = "Camera stream URL not configured";
+    cameraError.hidden = false;
+    cameraStream.hidden = true;
+    cameraStream.removeAttribute("src");
+    return;
+  }
+
+  const currentStreamUrl = cameraStream.dataset.streamUrl;
+  if (currentStreamUrl !== settings.camera_stream_url) {
+    startCameraStream(settings.camera_stream_url);
   }
 }
 
-function startCameraStream(): void {
+function startCameraStream(streamUrl: string): void {
   window.clearTimeout(state.cameraRetryTimer);
   cameraError.hidden = true;
   cameraStream.hidden = false;
-  cameraStream.src = `${API_BASE}/api/camera/stream?t=${Date.now()}`;
+  cameraStream.dataset.streamUrl = streamUrl;
+  const url = new URL(streamUrl, window.location.href);
+  url.searchParams.set("t", String(Date.now()));
+  cameraStream.src = url.toString();
 }
 
 function scheduleCameraRetry(): void {
@@ -295,7 +313,10 @@ function scheduleCameraRetry(): void {
   state.cameraRetryCount += 1;
   state.cameraRetryTimer = window.setTimeout(() => {
     if (!cameraPanel.hidden && !document.hidden) {
-      startCameraStream();
+      const payloadUrl = cameraStream.dataset.streamUrl;
+      if (payloadUrl) {
+        startCameraStream(payloadUrl);
+      }
     }
   }, delayMs);
 }

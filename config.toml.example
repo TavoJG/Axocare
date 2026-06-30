@@ -16,7 +16,15 @@ enabled = false
 fps = 15
 height = 480
 jpeg_quality = 80
+stream_url = "/camera/stream"
 width = 640
+
+[camera_service]
+ffmpeg_path = "ffmpeg"
+health_path = "/health"
+listen = ":8081"
+restart_delay_ms = 2000
+stream_path = "/stream"
 
 [relay]
 active_high = false

@@ -1,0 +1,13 @@
+[Unit]
+Description=Axocare Camera Streaming Service
+After=network.target
+
+[Service]
+WorkingDirectory=/home/pi/axocare
+ExecStart=/home/pi/axocare/camera_service/axocare-camera --config /home/pi/axocare/config.toml
+Restart=always
+RestartSec=2
+User=pi
+
+[Install]
+WantedBy=multi-user.target

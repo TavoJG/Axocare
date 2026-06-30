@@ -6,7 +6,6 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 import db
-from axocare_api import routes as api_routes
 from axocare_api.app import create_app
 
 
@@ -154,6 +153,7 @@ def test_dashboard_returns_current_history_and_relay_events(tmp_path: Path) -> N
         "notification_threshold_c": 20.0,
         "interval_seconds": 60,
         "camera_enabled": False,
+        "camera_stream_url": None,
         "camera_device": "0",
         "camera_width": 640,
         "camera_height": 480,
@@ -267,32 +267,41 @@ def test_camera_stream_is_disabled_by_default(tmp_path: Path) -> None:
     assert response.json() == {"detail": "Camera streaming is disabled"}
 
 
-def test_camera_stream_sends_mobile_friendly_headers(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_camera_stream_redirects_to_dedicated_service(tmp_path: Path) -> None:
     db_path = tmp_path / "camera.db"
 
-    monkeypatch.setattr(api_routes, "MjpegCameraStream", _FakeMjpegCameraStream)
-
     with TestClient(
-        create_app(_write_config(tmp_path, db_path, camera_enabled=True))
+        create_app(
+            _write_config(
+                tmp_path,
+                db_path,
+                camera_enabled=True,
+                camera_stream_url="http://camera.local:8081/stream",
+            )
+        )
     ) as client:
-        response = client.get("/api/camera/stream")
+        response = client.get("/api/camera/stream", follow_redirects=False)
 
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith(
-        "multipart/x-mixed-replace; boundary=frame"
-    )
-    assert response.headers["cache-control"] == (
-        "no-store, no-cache, must-revalidate, max-age=0"
-    )
-    assert response.headers["pragma"] == "no-cache"
-    assert response.headers["expires"] == "0"
-    assert response.headers["x-accel-buffering"] == "no"
+    assert response.status_code == 307
+    assert response.headers["location"] == "http://camera.local:8081/stream"
+
+
+def test_camera_stream_requires_external_stream_url_when_enabled(tmp_path: Path) -> None:
+    db_path = tmp_path / "camera-misconfigured.db"
+
+    with TestClient(create_app(_write_config(tmp_path, db_path, camera_enabled=True))) as client:
+        response = client.get("/api/camera/stream", follow_redirects=False)
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Camera stream URL is not configured"}
 
 
 def _write_config(
-    tmp_path: Path, db_path: Path, *, camera_enabled: bool = False
+    tmp_path: Path,
+    db_path: Path,
+    *,
+    camera_enabled: bool = False,
+    camera_stream_url: str | None = None,
 ) -> Path:
     config_path = tmp_path / "config.toml"
     config_path.write_text(
@@ -311,6 +320,7 @@ interval_seconds = 60
 
 [camera]
 enabled = {"true" if camera_enabled else "false"}
+stream_url = "{camera_stream_url or ''}"
 """.strip(),
         encoding="utf-8",
     )
@@ -366,14 +376,6 @@ def _insert_temperature(
 
 def _sqlite_utc(value: datetime) -> str:
     return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-
-
-class _FakeMjpegCameraStream:
-    def __init__(self, _settings) -> None:
-        pass
-
-    def __iter__(self):
-        yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\nfake\r\n"
 
 
 def _insert_relay_event(

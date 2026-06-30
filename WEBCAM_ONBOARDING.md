@@ -24,28 +24,14 @@ confirma que la webcam funcione en otra computadora y reinicia la Pi.
 
 ## 2. Instalar Dependencias
 
-Axocare usa OpenCV para leer frames de la webcam y servirlos como un stream
-MJPEG.
+Axocare usa un servicio dedicado en Go para publicar el stream MJPEG, y ese
+servicio usa FFmpeg para capturar la webcam.
 
-Instala OpenCV en la Raspberry Pi:
+Instala FFmpeg en la Raspberry Pi:
 
 ```bash
 sudo apt update
-sudo apt install python3-opencv
-```
-
-Si Axocare usa un entorno virtual creado con `--system-site-packages`, la API
-deberia poder importar el paquete OpenCV instalado por el sistema:
-
-```bash
-python3 -m venv --system-site-packages .venv
-```
-
-Verifica que OpenCV se pueda importar:
-
-```bash
-source .venv/bin/activate
-python -c "import cv2; print(cv2.__version__)"
+sudo apt install ffmpeg
 ```
 
 ## 3. Configurar Axocare
@@ -55,15 +41,28 @@ Edita `config.toml` y agrega o actualiza la seccion de camara:
 ```toml
 [camera]
 enabled = true
+stream_url = "/camera/stream"
 device = "0"
 width = 640
 height = 480
 fps = 15
 jpeg_quality = 80
+
+[camera_service]
+listen = ":8081"
+stream_path = "/stream"
+health_path = "/health"
+ffmpeg_path = "ffmpeg"
+restart_delay_ms = 2000
 ```
 
-`device = "0"` le indica a OpenCV que use la primera webcam disponible.
-Tambien puedes usar la ruta explicita del dispositivo:
+Si vas a servir el dashboard con NGINX, esta opcion relativa es la mas limpia
+porque el navegador no necesita conocer el puerto `8081`. Si vas a conectarte
+directamente al servicio de camara, usa una URL completa como
+`http://<pi-ip>:8081/stream`.
+
+`device = "0"` se traduce a `/dev/video0`. Tambien puedes usar la ruta explicita
+del dispositivo:
 
 ```toml
 device = "/dev/video0"
@@ -73,7 +72,7 @@ Empieza con `640x480` a `15 fps`. Si el dashboard se siente lento o la Pi se
 calienta demasiado, reduce `fps` o la resolucion. Si la imagen se ve demasiado
 comprimida, sube `jpeg_quality` hasta `100`.
 
-## 4. Reiniciar La API
+## 4. Iniciar La API Y El Servicio De Camara
 
 Si estas corriendo la API manualmente:
 
@@ -81,11 +80,28 @@ Si estas corriendo la API manualmente:
 uvicorn api:app --host 0.0.0.0 --port 8000
 ```
 
+Compila y arranca el servicio de streaming:
+
+```bash
+cd camera_service
+./build-pi4.sh
+./dist/axocare-camera-pi4 --config ../config.toml
+```
+
+Para Raspberry Pi OS de 32 bits:
+
+```bash
+cd camera_service
+GOARCH=arm GOARM=7 OUTPUT=dist/axocare-camera-pi4-armv7 ./build-pi4.sh
+```
+
 Si estas usando systemd:
 
 ```bash
 sudo systemctl restart axocare-api.service
 sudo systemctl status axocare-api.service
+sudo systemctl restart axocare-camera.service
+sudo systemctl status axocare-camera.service
 ```
 
 ## 5. Probar El Stream Directamente
@@ -93,13 +109,14 @@ sudo systemctl status axocare-api.service
 Abre la URL del stream en un navegador:
 
 ```text
-http://<pi-ip>:8000/api/camera/stream
+http://<pi-ip>/camera/stream
 ```
 
-Si NGINX sirve el dashboard de produccion en el puerto 80, usa:
+La API mantiene `/api/camera/stream` como redireccion ligera, asi que tambien
+puedes probar:
 
 ```text
-http://<pi-ip>/api/camera/stream
+http://<pi-ip>:8000/api/camera/stream
 ```
 
 Deberias ver una imagen MJPEG en vivo. Algunos navegadores la muestran como una
@@ -148,23 +165,32 @@ enabled = true
 
 Luego reinicia la API.
 
-### La API Responde `Camera streaming requires OpenCV`
+### El Servicio De Camara No Arranca
 
-Instala OpenCV:
-
-```bash
-sudo apt install python3-opencv
-```
-
-Si usas un entorno virtual, recrealo con paquetes del sistema habilitados:
+Confirma que FFmpeg este instalado:
 
 ```bash
-python3 -m venv --system-site-packages .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+ffmpeg -version
 ```
 
-### La API Responde `Could not open camera device`
+Luego prueba correr el binario manualmente:
+
+```bash
+cd camera_service
+go run . --config ../config.toml
+```
+
+### La API Responde `Camera stream URL is not configured`
+
+Confirma que `config.toml` tenga:
+
+```toml
+[camera]
+enabled = true
+stream_url = "/camera/stream"
+```
+
+### FFmpeg No Puede Abrir La Camara
 
 Revisa que dispositivo existe:
 
@@ -191,7 +217,8 @@ curl http://<pi-ip>:8000/api/dashboard
 Busca:
 
 ```json
-"camera_enabled": true
+"camera_enabled": true,
+"camera_stream_url": "/camera/stream"
 ```
 
 Si usas el servidor de desarrollo de Vite desde otra maquina, asegurate de que
@@ -212,7 +239,7 @@ fps = 10
 jpeg_quality = 70
 ```
 
-Luego reinicia la API.
+Luego reinicia la API y el servicio de camara.
 
 ## 8. Configuracion Recomendada Inicial
 
@@ -221,9 +248,17 @@ Para una Raspberry Pi 4 con una webcam USB comun:
 ```toml
 [camera]
 enabled = true
+stream_url = "/camera/stream"
 device = "/dev/video0"
 width = 640
 height = 480
 fps = 15
 jpeg_quality = 80
+
+[camera_service]
+listen = ":8081"
+stream_path = "/stream"
+health_path = "/health"
+ffmpeg_path = "ffmpeg"
+restart_delay_ms = 2000
 ```

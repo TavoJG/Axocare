@@ -6,10 +6,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import RedirectResponse
 
 import db
-from axocare_api.camera import BOUNDARY, CameraUnavailableError, MjpegCameraStream
 from axocare_api.schemas import (
     ControlHealth,
     CurrentReadingResponse,
@@ -25,14 +24,6 @@ from axocare_api.settings import DEFAULT_HISTORY_MINUTES, DEFAULT_LIMIT, ApiSett
 router = APIRouter(
     prefix="/api",
 )
-
-CAMERA_STREAM_HEADERS = {
-    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-    "Pragma": "no-cache",
-    "Expires": "0",
-    "X-Accel-Buffering": "no",
-}
-
 
 def settings(request: Request) -> ApiSettings:
     """Return settings loaded during application startup."""
@@ -50,6 +41,7 @@ def root() -> dict[str, Any]:
             "temperature_readings": "/api/temperature-readings",
             "relay_events": "/api/relay-events",
             "camera_stream": "/api/camera/stream",
+            "camera_stream_source": "/camera/stream",
         },
     }
 
@@ -206,19 +198,16 @@ def dashboard(
 
 
 @router.get("/camera/stream", tags=["camera"])
-def camera_stream(
+def camera_stream_redirect(
     api_settings: ApiSettings = Depends(settings),
-) -> StreamingResponse:
+) -> RedirectResponse:
     if not api_settings.camera_enabled:
         raise HTTPException(status_code=404, detail="Camera streaming is disabled")
 
-    try:
-        stream = MjpegCameraStream(api_settings)
-    except CameraUnavailableError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if not api_settings.camera_stream_url:
+        raise HTTPException(
+            status_code=503,
+            detail="Camera stream URL is not configured",
+        )
 
-    return StreamingResponse(
-        stream,
-        headers=CAMERA_STREAM_HEADERS,
-        media_type=f"multipart/x-mixed-replace; boundary={BOUNDARY}",
-    )
+    return RedirectResponse(url=api_settings.camera_stream_url, status_code=307)

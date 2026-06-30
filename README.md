@@ -101,37 +101,70 @@ as the tank temperature and relay state.
 
 ## Camera Streaming
 
-Axocare can expose an MJPEG stream for a webcam connected to the Raspberry Pi.
-Install OpenCV from the Raspberry Pi OS packages:
+Axocare can expose an MJPEG stream for a webcam connected to the Raspberry Pi
+through a dedicated Go service. The API no longer captures video directly;
+instead it publishes the external stream URL and the dashboard connects to that
+service.
+
+Install FFmpeg on the Raspberry Pi:
 
 ```bash
-sudo apt install python3-opencv
+sudo apt install ffmpeg
 ```
 
-For a USB webcam, enable the camera in `config.toml`:
+For a USB webcam, enable the camera and point the dashboard at the dedicated
+stream URL in `config.toml`:
 
 ```toml
 [camera]
 enabled = true
+stream_url = "/camera/stream"
 device = "0"
 width = 640
 height = 480
 fps = 15
 jpeg_quality = 80
+
+[camera_service]
+listen = ":8081"
+stream_path = "/stream"
+health_path = "/health"
+ffmpeg_path = "ffmpeg"
+restart_delay_ms = 2000
 ```
 
-`device = "0"` maps to the first `/dev/video*` camera. You can also use an
-explicit device path such as `device = "/dev/video0"`.
+`device = "0"` maps to `/dev/video0`. You can also use an explicit device path
+such as `device = "/dev/video0"`.
 
-When enabled, the API serves:
+If you put NGINX in front of Axocare, `stream_url = "/camera/stream"` keeps the
+browser on the same origin while NGINX proxies internally to the camera
+service. If you want to connect directly to the service without NGINX, use a
+full URL such as `http://<pi-ip>:8081/stream`.
+
+Build and run the camera service:
+
+```bash
+cd camera_service
+./build-pi4.sh
+./dist/axocare-camera-pi4 --config ../config.toml
+```
+
+For a 32-bit Raspberry Pi OS build:
+
+```bash
+cd camera_service
+GOARCH=arm GOARM=7 OUTPUT=dist/axocare-camera-pi4-armv7 ./build-pi4.sh
+```
+
+The dedicated MJPEG endpoint will be available at:
 
 ```text
-http://<pi-ip>:8000/api/camera/stream
+http://<pi-ip>:8081/stream
 ```
 
-The Vite dashboard automatically shows a live camera panel when
-`camera.enabled` is true. If you serve the production dashboard through the
-included NGINX config, the stream is proxied through `/api/camera/stream`.
+The API keeps `/api/camera/stream` as a lightweight `307` redirect to the
+dedicated stream URL, and the Vite dashboard automatically uses
+`camera.stream_url` when `camera.enabled` is true.
 
 ## Run
 
@@ -151,6 +184,13 @@ Start the FastAPI dashboard API:
 
 ```bash
 uvicorn api:app --host 0.0.0.0 --port 8000
+```
+
+Start the dedicated camera streaming service:
+
+```bash
+cd camera_service
+go run . --config ../config.toml
 ```
 
 Start the Vite dashboard during development:
@@ -202,9 +242,10 @@ browser origins for a frontend. By default, the API allows all origins.
 ## NGINX HTTP Proxy
 
 To serve the dashboard over plain HTTP on port 80, build the Vite dashboard and
-proxy only the API to FastAPI. The included NGINX config serves
-`/home/pi/axocare/frontend/dist` and forwards `/api/` to
-`http://127.0.0.1:8000`.
+proxy both backend services through NGINX. The included NGINX config serves
+`/home/pi/axocare/frontend/dist`, forwards `/api/` to FastAPI at
+`http://127.0.0.1:8000`, and forwards `/camera/stream` plus `/camera/health` to
+the dedicated camera service at `http://127.0.0.1:8081`.
 
 Install NGINX:
 
@@ -239,6 +280,15 @@ Open:
 
 ```text
 http://<pi-ip>
+```
+
+With that setup, the recommended camera config is:
+
+```toml
+[camera]
+enabled = true
+stream_url = "/camera/stream"
+device = "/dev/video0"
 ```
 
 ## Systemd Services
