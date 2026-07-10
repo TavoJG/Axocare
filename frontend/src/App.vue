@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import CameraPanel from "./components/CameraPanel.vue";
+import AgentChat from "./components/AgentChat.vue";
 import HumidityChart from "./components/HumidityChart.vue";
 import ReadingsTable from "./components/ReadingsTable.vue";
 import RelayEvents from "./components/RelayEvents.vue";
@@ -38,6 +39,7 @@ const title = computed(() => `Last ${formatSpan(dashboard.value?.span_minutes ??
       </section>
 
       <template v-if="dashboard">
+        <AgentChat />
         <CameraPanel :settings="dashboard.settings" />
         <TemperatureChart :payload="dashboard" :title="title" :last-updated="lastUpdated ? `Updated ${formatTime(lastUpdated)}` : ''" />
         <HumidityChart :payload="dashboard" :title="title" />

@@ -44,3 +44,8 @@ export type DashboardResponse = {
   relay_events: RelayEvent[];
   span_minutes: number;
 };
+
+export type AgentChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
