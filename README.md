@@ -221,6 +221,14 @@ cd frontend
 npm run build
 ```
 
+The dashboard is implemented with Vue 3 and TypeScript. Run its unit and
+component tests with:
+
+```bash
+cd frontend
+npm test
+```
+
 Open the interactive API docs:
 
 ```text
