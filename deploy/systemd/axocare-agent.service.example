@@ -1,0 +1,25 @@
+[Unit]
+Description=Axocare API and MCP-grounded agent
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/axocare
+EnvironmentFile=/etc/axocare/agent.env
+ExecStart=/home/pi/axocare/.venv/bin/uvicorn api:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+# The service only needs to write the SQLite sidecar files in the project tree.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=strict
+ReadWritePaths=/home/pi/axocare
+
+[Install]
+WantedBy=multi-user.target

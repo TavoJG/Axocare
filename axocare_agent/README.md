@@ -33,6 +33,11 @@ python -m axocare_agent.cli
 Use `exit` or `quit` to end an interactive session. The provider must support
 OpenAI-style tool calling; the agent discovers the Axocare MCP tools at startup.
 
+For a production Raspberry Pi deployment, run the dashboard API (which exposes
+the agent routes) as a systemd service. The sample unit, environment file, and
+installation instructions are in
+[`deploy/systemd/README.md`](../deploy/systemd/README.md).
+
 ## Dashboard API
 
 When the Axocare FastAPI service is running with the same environment settings,

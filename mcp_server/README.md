@@ -25,6 +25,10 @@ For example, an MCP client configuration can use:
 ```
 
 The server communicates over stdio. Keep stdout reserved for the MCP protocol.
+It should normally be launched by its MCP client instead of enabled as a
+long-running systemd daemon. See [`deploy/systemd/README.md`](../deploy/systemd/README.md)
+for the recommended agent service layout and an optional socket-activated MCP
+unit template.
 
 ## Tools
 
