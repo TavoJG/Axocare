@@ -1,0 +1,23 @@
+[Unit]
+Description=Axocare MCP stdio server (%i)
+Documentation=file:/home/pi/axocare/mcp_server/README.md
+
+# This is an on-demand helper unit, not a boot service. MCP clients normally
+# launch the same command directly so they can own its stdin and stdout.
+[Service]
+Type=exec
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/axocare
+ExecStart=/home/pi/axocare/.venv/bin/python -m mcp_server.server --db /home/pi/axocare/axocare.db
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=strict
+ReadOnlyPaths=/home/pi/axocare
+
+# Intentionally no [Install] section: do not enable this unit at boot. A
+# socket/bridge that understands MCP stdio must instantiate it and own the I/O.

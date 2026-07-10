@@ -44,6 +44,124 @@ button:disabled {
   opacity: 0.7;
 }
 
+button:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.4);
+  outline-offset: 2px;
+}
+
+.button-secondary {
+  color: #0f766e;
+  border: 1px solid #99c9c4;
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.button-small {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 0.82rem;
+}
+
+.agent-panel {
+  margin-bottom: 16px;
+}
+
+.agent-log {
+  display: grid;
+  max-height: 380px;
+  min-height: 140px;
+  gap: 12px;
+  overflow-y: auto;
+  padding: 14px;
+  border: 1px solid #e5eaec;
+  border-radius: 8px;
+  background: #fbfcf9;
+}
+
+.agent-welcome,
+.agent-status {
+  align-self: center;
+  color: #64747b;
+  text-align: center;
+}
+
+.agent-message {
+  width: fit-content;
+  max-width: min(82%, 720px);
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 4px 12px rgba(36, 50, 58, 0.06);
+}
+
+.agent-message.user {
+  justify-self: end;
+  color: #ffffff;
+  background: #0f766e;
+}
+
+.agent-message span {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.agent-message p {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+}
+
+.agent-error {
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: #7f1d1d;
+  background: #fff1f1;
+}
+
+.agent-form {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.agent-form textarea {
+  flex: 1;
+  resize: vertical;
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid #cbd5d8;
+  border-radius: 8px;
+  color: #24323a;
+  background: #ffffff;
+  font: inherit;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.dashboard-alert {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 14px 18px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #7f1d1d;
+  background: #fff1f1;
+}
+
 select {
   min-height: 42px;
   min-width: 128px;
@@ -355,5 +473,17 @@ th {
 
   .panel {
     padding: 16px;
+  }
+
+  .agent-form {
+    flex-wrap: wrap;
+  }
+
+  .agent-form textarea {
+    flex-basis: 100%;
+  }
+
+  .agent-message {
+    max-width: 92%;
   }
 }

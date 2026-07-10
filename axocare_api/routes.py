@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 
 import db
 from axocare_api.schemas import (
+    AgentChatRequest,
+    AgentChatResponse,
     ControlHealth,
     CurrentReadingResponse,
     DashboardResponse,
@@ -40,6 +43,8 @@ def root() -> dict[str, Any]:
             "current": "/api/current",
             "temperature_readings": "/api/temperature-readings",
             "relay_events": "/api/relay-events",
+            "agent_chat": "/api/agent/chat",
+            "agent_chat_stream": "/api/agent/chat/stream",
             "camera_stream": "/api/camera/stream",
             "camera_stream_source": "/camera/stream",
         },
@@ -195,6 +200,120 @@ def dashboard(
         relay_events=[relay_event(row) for row in events],
         span_minutes=span_minutes,
     )
+
+
+@router.post(
+    "/agent/chat",
+    response_model=AgentChatResponse,
+    tags=["agent"],
+)
+async def agent_chat(
+    payload: AgentChatRequest,
+    api_settings: ApiSettings = Depends(settings),
+) -> AgentChatResponse:
+    """Answer a dashboard question through the read-only MCP-grounded agent."""
+    try:
+        answer = await _answer_agent(
+            question=payload.question,
+            history=[message.model_dump() for message in payload.history],
+            db_path=api_settings.db_path,
+        )
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="The aquarium agent is currently unavailable. Check its server configuration.",
+        ) from exc
+
+    return AgentChatResponse(answer=answer)
+
+
+async def _answer_agent(
+    *,
+    question: str,
+    history: list[dict[str, str]],
+    db_path: str,
+) -> str:
+    """Create per-request provider and MCP sessions without exposing credentials."""
+    from axocare_agent.agent import AquariumAgent
+    from axocare_agent.config import AgentConfig
+    from axocare_agent.mcp_client import AxocareMcpClient
+    from axocare_agent.provider import OpenAICompatibleProvider
+
+    config = AgentConfig.from_environment(db_path=db_path)
+    provider = OpenAICompatibleProvider(
+        base_url=config.base_url,
+        model=config.model,
+        api_key=config.api_key,
+        timeout_seconds=config.timeout_seconds,
+    )
+    async with AxocareMcpClient(
+        config.db_path,
+        startup_timeout_seconds=config.timeout_seconds,
+    ) as mcp_client:
+        agent = AquariumAgent(
+            provider,
+            mcp_client,
+            max_tool_rounds=config.max_tool_rounds,
+        )
+        return await agent.answer(question, history)
+
+
+@router.post(
+    "/agent/chat/stream",
+    tags=["agent"],
+)
+async def agent_chat_stream(
+    payload: AgentChatRequest,
+    api_settings: ApiSettings = Depends(settings),
+) -> StreamingResponse:
+    """Stream safe agent lifecycle events as Server-Sent Events."""
+    return StreamingResponse(
+        _agent_sse_events(
+            question=payload.question,
+            history=[message.model_dump() for message in payload.history],
+            db_path=api_settings.db_path,
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+async def _agent_sse_events(
+    *,
+    question: str,
+    history: list[dict[str, str]],
+    db_path: str,
+) -> AsyncIterator[str]:
+    """Yield browser-safe agent progress and completion events."""
+    yield _sse_event("status", {"stage": "processing"})
+    try:
+        answer = await _answer_agent(
+            question=question,
+            history=history,
+            db_path=db_path,
+        )
+    except (RuntimeError, ValueError):
+        yield _sse_event(
+            "error",
+            {
+                "message": (
+                    "The aquarium agent is currently unavailable. "
+                    "Check its server configuration."
+                )
+            },
+        )
+        return
+
+    yield _sse_event("answer", {"answer": answer})
+    yield _sse_event("done", {})
+
+
+def _sse_event(event: str, payload: dict[str, Any]) -> str:
+    """Encode one SSE event without exposing internal provider or MCP details."""
+    return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
 
 
 @router.get("/camera/stream", tags=["camera"])

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from typing import Literal
+
+from pydantic import BaseModel, Field
 
 from axocare_api.settings import ApiSettings
 
@@ -82,3 +84,23 @@ class DashboardResponse(BaseModel):
     readings: list[TemperatureReading]
     relay_events: list[RelayEvent]
     span_minutes: int
+
+
+class AgentChatMessage(BaseModel):
+    """One prior user or assistant message supplied by the dashboard."""
+
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=4_000)
+
+
+class AgentChatRequest(BaseModel):
+    """Browser-safe input for one grounded aquarium-agent response."""
+
+    question: str = Field(min_length=1, max_length=4_000)
+    history: list[AgentChatMessage] = Field(default_factory=list, max_length=12)
+
+
+class AgentChatResponse(BaseModel):
+    """The agent's final natural-language answer."""
+
+    answer: str
