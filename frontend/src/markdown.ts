@@ -1,14 +1,14 @@
 function escapeHtml(value: string): string {
   return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function escapeAttribute(value: string): string {
-  return escapeHtml(value).replaceAll("`", "&#96;");
+  return escapeHtml(value).replace(/`/g, "&#96;");
 }
 
 function sanitizeUrl(value: string): string | null {
@@ -22,7 +22,7 @@ function renderInline(text: string): string {
   html = html.replace(/`([^`\n]+)`/g, "<code>$1</code>");
   html = html.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
   html = html.replace(/\*([^*\n]+)\*/g, "<em>$1</em>");
-  html = html.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_match, label: string, url: string) => {
+  html = html.replace(/\[([^\]]+)\]\((.+)\)/g, (_match, label: string, url: string) => {
     const safeUrl = sanitizeUrl(url);
     if (!safeUrl) return label;
     return `<a href="${escapeAttribute(safeUrl)}" target="_blank" rel="noreferrer">${label}</a>`;
