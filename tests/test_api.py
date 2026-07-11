@@ -274,6 +274,12 @@ def test_agent_chat_returns_server_side_agent_answer(tmp_path: Path, monkeypatch
             "history": [{"role": "user", "content": "Show the latest reading."}],
             "config_path": str(tmp_path / "config.toml"),
             "db_path": str(db_path),
+            "system_context": (
+                "Configured target water temperature: 18.0 C.\n"
+                "Cooling turns on at: 18.6 C.\n"
+                "Cooling turns off at: 18.0 C.\n"
+                "Notification threshold: 20.0 C."
+            ),
         }
     ]
 

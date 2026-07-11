@@ -225,6 +225,7 @@ async def agent_chat(
             history=[message.model_dump() for message in payload.history],
             config_path=request.app.state.config_path,
             db_path=api_settings.db_path,
+            system_context=_agent_system_context(api_settings),
         )
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(
@@ -241,6 +242,7 @@ async def _answer_agent(
     history: list[dict[str, str]],
     config_path: str,
     db_path: str,
+    system_context: str | None = None,
 ) -> str:
     """Create per-request provider and MCP sessions without exposing credentials."""
     AquariumAgent, AgentConfig, AxocareMcpClient, OpenAICompatibleProvider = _load_agent_runtime()
@@ -262,7 +264,7 @@ async def _answer_agent(
             mcp_client,
             max_tool_rounds=config.max_tool_rounds,
         )
-        return await agent.answer(question, history)
+        return await agent.answer(question, history, system_context=system_context)
 
 
 @router.post(
@@ -281,6 +283,7 @@ async def agent_chat_stream(
             history=[message.model_dump() for message in payload.history],
             config_path=request.app.state.config_path,
             db_path=api_settings.db_path,
+            system_context=_agent_system_context(api_settings),
         ),
         media_type="text/event-stream",
         headers={
@@ -296,6 +299,7 @@ async def _agent_sse_events(
     history: list[dict[str, str]],
     config_path: str,
     db_path: str,
+    system_context: str | None = None,
 ) -> AsyncIterator[str]:
     """Yield browser-safe agent progress and completion events."""
     yield _sse_event("status", {"stage": "processing"})
@@ -305,6 +309,7 @@ async def _agent_sse_events(
             history=history,
             config_path=config_path,
             db_path=db_path,
+            system_context=system_context,
         )
     except (RuntimeError, ValueError):
         yield _sse_event(
@@ -320,6 +325,23 @@ async def _agent_sse_events(
 def _sse_event(event: str, payload: dict[str, Any]) -> str:
     """Encode one SSE event without exposing internal provider or MCP details."""
     return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
+
+
+def _agent_system_context(api_settings: ApiSettings) -> str:
+    """Provide stable runtime targets so the agent can answer config questions."""
+    notification_threshold = (
+        f"{api_settings.notification_threshold_c:.1f} C"
+        if api_settings.notification_threshold_c is not None
+        else "not configured"
+    )
+    return "\n".join(
+        [
+            f"Configured target water temperature: {api_settings.target_c:.1f} C.",
+            f"Cooling turns on at: {api_settings.cooling_on_c:.1f} C.",
+            f"Cooling turns off at: {api_settings.cooling_off_c:.1f} C.",
+            f"Notification threshold: {notification_threshold}.",
+        ]
+    )
 
 
 def _load_agent_runtime() -> tuple[type[Any], type[Any], type[Any], type[Any]]:

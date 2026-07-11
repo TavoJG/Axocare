@@ -7,13 +7,24 @@ from typing import Any, Protocol
 
 from axocare_agent.provider import AssistantResponse, ChatProvider
 
-SYSTEM_INSTRUCTIONS = """You are Axocare's aquarium monitoring assistant.
-Use the provided MCP tools for aquarium telemetry instead of guessing. Clearly
-distinguish current measurements, historical observations, predictions, and
-recommendations. Mention missing, stale, or unavailable data. Predictions are
-estimates, not certainties. Do not make veterinary or health claims beyond an
-observed temperature-related risk. Do not claim a tool result that you did not
-receive."""
+SYSTEM_INSTRUCTIONS = """You are Axocare's aquarium monitoring assistant for an axolotl aquarium.
+Use the provided MCP tools for aquarium telemetry instead of guessing.
+Respond in the same language as the user's latest message. Support both English
+and Spanish. You may format replies with concise Markdown when it improves
+clarity.
+
+Clearly distinguish current measurements, historical observations, predictions,
+and recommendations. Mention missing, stale, or unavailable data. Predictions
+are estimates, not certainties. Do not make veterinary or health claims beyond
+an observed temperature-related risk. Do not claim a tool result that you did
+not receive.
+
+Axolotl context:
+- Axolotls are cold-water aquatic salamanders.
+- Stable, cool water matters more than abrupt changes.
+- When discussing temperature, prioritize measured data and configured targets
+  over general advice.
+"""
 
 
 class ToolClient(Protocol):
@@ -36,10 +47,11 @@ class AquariumAgent:
         self,
         question: str,
         history: list[dict[str, Any]] | None = None,
+        system_context: str | None = None,
     ) -> str:
         """Answer a question, executing only MCP tools requested by the model."""
         tools = await self._mcp_client.tool_schemas()
-        messages = [{"role": "system", "content": SYSTEM_INSTRUCTIONS}]
+        messages = [{"role": "system", "content": _compose_system_instructions(system_context)}]
         messages.extend(history or [])
         messages.append({"role": "user", "content": question})
 
@@ -90,3 +102,9 @@ def _assistant_tool_message(response: AssistantResponse) -> dict[str, Any]:
             for call in response.tool_calls
         ],
     }
+
+
+def _compose_system_instructions(system_context: str | None) -> str:
+    if not system_context:
+        return SYSTEM_INSTRUCTIONS
+    return f"{SYSTEM_INSTRUCTIONS}\nRuntime context:\n{system_context.strip()}"

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from "vue";
+import { renderMarkdown } from "../markdown";
 import { useAgentChat } from "../useAgentChat";
 
 const question = ref("");
@@ -11,6 +12,10 @@ async function send(): Promise<void> {
   if (!value.trim() || processing.value) return;
   question.value = "";
   await submit(value);
+}
+
+function assistantHtml(content: string): string {
+  return renderMarkdown(content);
 }
 
 watch([messages, status, error], async () => {
@@ -28,7 +33,9 @@ watch([messages, status, error], async () => {
     <div ref="log" class="agent-log" aria-live="polite" aria-label="Agent conversation">
       <div v-if="!messages.length" class="agent-welcome">Ask about current conditions, temperature trends, cooling activity, or predictions.</div>
       <article v-for="(message, index) in messages" :key="index" class="agent-message" :class="message.role">
-        <span>{{ message.role === "user" ? "You" : "Axocare" }}</span><p>{{ message.content }}</p>
+        <span>{{ message.role === "user" ? "You" : "Axocare" }}</span>
+        <p v-if="message.role === 'user'" class="agent-text">{{ message.content }}</p>
+        <div v-else class="agent-markdown" v-html="assistantHtml(message.content)"></div>
       </article>
       <div v-if="status" class="agent-status" role="status">{{ status }}</div>
       <div v-if="error" class="agent-error" role="alert">{{ error }}</div>

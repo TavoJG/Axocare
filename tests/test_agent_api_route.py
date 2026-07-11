@@ -37,6 +37,12 @@ def test_agent_chat_uses_api_database_and_returns_answer(monkeypatch) -> None:
             "history": [{"role": "user", "content": "Show the latest reading."}],
             "config_path": "/tmp/config.toml",
             "db_path": "/tmp/axocare.db",
+            "system_context": (
+                "Configured target water temperature: 18.0 C.\n"
+                "Cooling turns on at: 18.6 C.\n"
+                "Cooling turns off at: 18.0 C.\n"
+                "Notification threshold: 20.0 C."
+            ),
         }
     ]
 
@@ -75,6 +81,15 @@ def test_load_agent_runtime_reports_missing_mcp_dependency(monkeypatch) -> None:
 
     with pytest.raises(RuntimeError, match="pip install -r requirements.txt"):
         routes._load_agent_runtime()
+
+
+def test_agent_system_context_includes_temperature_targets() -> None:
+    assert routes._agent_system_context(_settings()) == (
+        "Configured target water temperature: 18.0 C.\n"
+        "Cooling turns on at: 18.6 C.\n"
+        "Cooling turns off at: 18.0 C.\n"
+        "Notification threshold: 20.0 C."
+    )
 
 
 def _settings() -> ApiSettings:

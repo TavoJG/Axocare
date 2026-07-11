@@ -43,6 +43,21 @@ def test_agent_returns_structured_tool_error_to_model() -> None:
     assert "Invalid tool arguments" in provider.messages[1][-1]["content"]
 
 
+def test_agent_includes_runtime_context_in_system_prompt() -> None:
+    provider = _FakeProvider([AssistantResponse(content="Objetivo: 18.0 C.", tool_calls=[])])
+
+    answer = asyncio.run(
+        AquariumAgent(provider, _FakeMcp(), max_tool_rounds=1).answer(
+            "Cual es la temperatura objetivo?",
+            system_context="Configured target water temperature: 18.0 C.",
+        )
+    )
+
+    assert answer == "Objetivo: 18.0 C."
+    assert "Support both English" in provider.messages[0][0]["content"]
+    assert "Configured target water temperature: 18.0 C." in provider.messages[0][0]["content"]
+
+
 def test_agent_stops_at_tool_round_limit() -> None:
     provider = _FakeProvider(
         [
