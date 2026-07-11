@@ -1,28 +1,31 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Chart } from "../chart";
+import { getChartPalette } from "../chartTheme";
 import { formatTime } from "../formatters";
 import type { DashboardResponse } from "../types";
 
-const props = defineProps<{ payload: DashboardResponse; title: string }>();
+const props = defineProps<{ payload: DashboardResponse; themeKey: string; title: string }>();
 const canvas = ref<HTMLCanvasElement>();
 let chart: Chart<"line", (number | null)[], string> | null = null;
 function render(): void {
   const readings = props.payload.readings;
   if (!readings.length || !canvas.value) { chart?.destroy(); chart = null; return; }
+  const palette = getChartPalette();
   const labels = readings.map((item) => formatTime(item.recorded_at));
   const datasets = [
-    { label: "Relative humidity", data: readings.map((item) => item.aht20_humidity_percent), borderColor: "#0f766e", backgroundColor: "rgba(15, 118, 110, 0.12)", fill: true, tension: 0.3, pointRadius: 2, pointHoverRadius: 5, spanGaps: false },
-    { label: "Room temperature", data: readings.map((item) => item.room_temperature), borderColor: "#1d4ed8", backgroundColor: "rgba(29, 78, 216, 0.08)", fill: false, tension: 0.3, pointRadius: 2, pointHoverRadius: 5, spanGaps: false, yAxisID: "yTemp" }
+    { label: "Relative humidity", data: readings.map((item) => item.aht20_humidity_percent), borderColor: palette.accent, backgroundColor: palette.accentFill, fill: true, tension: 0.3, pointRadius: 2, pointHoverRadius: 5, spanGaps: false },
+    { label: "Room temperature", data: readings.map((item) => item.room_temperature), borderColor: palette.info, backgroundColor: palette.secondaryFill, fill: false, tension: 0.3, pointRadius: 2, pointHoverRadius: 5, spanGaps: false, yAxisID: "yTemp" }
   ];
-  if (chart) { chart.data.labels = labels; chart.data.datasets = datasets; chart.update(); return; }
-  chart = new Chart(canvas.value, { type: "line", data: { labels, datasets }, options: {
-    responsive: true, maintainAspectRatio: false, interaction: { intersect: false, mode: "index" },
-    plugins: { legend: { labels: { boxWidth: 12, color: "#24323a", usePointStyle: true } }, tooltip: { callbacks: { label(context) { const value = context.parsed.y; const unit = context.dataset.yAxisID === "yTemp" ? "C" : "%"; const digits = unit === "C" ? 2 : 1; return `${context.dataset.label}: ${value != null && Number.isFinite(value) ? value.toFixed(digits) : "No data"} ${unit}`; } } } },
-    scales: { x: { grid: { color: "rgba(36, 50, 58, 0.08)" }, ticks: { autoSkip: true, maxTicksLimit: 8, color: "#5f6f76" } }, y: { grid: { color: "rgba(36, 50, 58, 0.08)" }, ticks: { color: "#5f6f76", callback: (value) => `${value} %` } }, yTemp: { position: "right", grid: { drawOnChartArea: false }, ticks: { color: "#1d4ed8", callback: (value) => `${value} C` } } }
-  } });
+  const options = {
+    responsive: true, maintainAspectRatio: false, interaction: { intersect: false, mode: "index" as const },
+    plugins: { legend: { labels: { boxWidth: 12, color: palette.legend, usePointStyle: true } }, tooltip: { callbacks: { label(context: { parsed: { y: number | null }; dataset: { label?: string; yAxisID?: string } }) { const value = context.parsed.y; const unit = context.dataset.yAxisID === "yTemp" ? "C" : "%"; const digits = unit === "C" ? 2 : 1; return `${context.dataset.label}: ${value != null && Number.isFinite(value) ? value.toFixed(digits) : "No data"} ${unit}`; } } } },
+    scales: { x: { grid: { color: palette.grid }, ticks: { autoSkip: true, maxTicksLimit: 8, color: palette.axis } }, y: { grid: { color: palette.grid }, ticks: { color: palette.axis, callback: (value: string | number) => `${value} %` } }, yTemp: { position: "right" as const, grid: { drawOnChartArea: false }, ticks: { color: palette.info, callback: (value: string | number) => `${value} C` } } }
+  };
+  if (chart) { chart.data.labels = labels; chart.data.datasets = datasets; chart.options = options; chart.update(); return; }
+  chart = new Chart(canvas.value, { type: "line", data: { labels, datasets }, options });
 }
-watch(() => props.payload, () => nextTick(render), { deep: true });
+watch(() => [props.payload, props.themeKey], () => nextTick(render), { deep: true });
 onMounted(render);
 onBeforeUnmount(() => chart?.destroy());
 </script>

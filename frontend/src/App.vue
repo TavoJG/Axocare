@@ -9,10 +9,16 @@ import StatusGrid from "./components/StatusGrid.vue";
 import TemperatureChart from "./components/TemperatureChart.vue";
 import { formatSpan, formatTime } from "./formatters";
 import { useDashboard } from "./useDashboard";
+import { useTheme, type ThemePreference } from "./useTheme";
 
 const SPAN_OPTIONS = [15, 30, 60, 180, 360, 720, 1440];
 const { spanMinutes, dashboard, loading, error, lastUpdated, load, setSpan } = useDashboard();
+const { preference, resolvedTheme, setPreference } = useTheme();
 const title = computed(() => `Last ${formatSpan(dashboard.value?.span_minutes ?? spanMinutes.value).toLowerCase()}`);
+
+function updateTheme(event: Event): void {
+  setPreference((event.target as HTMLSelectElement).value as ThemePreference);
+}
 </script>
 
 <template>
@@ -20,6 +26,13 @@ const title = computed(() => `Last ${formatSpan(dashboard.value?.span_minutes ??
     <header class="topbar">
       <div><p class="eyebrow">Aquarium controller</p><h1>Axocare</h1></div>
       <div class="toolbar">
+        <label class="field"><span>Theme</span>
+          <select :value="preference" @change="updateTheme">
+            <option value="system">System ({{ resolvedTheme }})</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
         <label class="field"><span>Time span</span>
           <select :value="spanMinutes" @change="setSpan(Number(($event.target as HTMLSelectElement).value))">
             <option v-for="minutes in SPAN_OPTIONS" :key="minutes" :value="minutes">{{ formatSpan(minutes) }}</option>
@@ -41,8 +54,8 @@ const title = computed(() => `Last ${formatSpan(dashboard.value?.span_minutes ??
       <template v-if="dashboard">
         <AgentChat />
         <CameraPanel :settings="dashboard.settings" />
-        <TemperatureChart :payload="dashboard" :title="title" :last-updated="lastUpdated ? `Updated ${formatTime(lastUpdated)}` : ''" />
-        <HumidityChart :payload="dashboard" :title="title" />
+        <TemperatureChart :payload="dashboard" :theme-key="resolvedTheme" :title="title" :last-updated="lastUpdated ? `Updated ${formatTime(lastUpdated)}` : ''" />
+        <HumidityChart :payload="dashboard" :theme-key="resolvedTheme" :title="title" />
         <section class="split">
           <ReadingsTable :readings="dashboard.readings" />
           <RelayEvents :events="dashboard.relay_events" />

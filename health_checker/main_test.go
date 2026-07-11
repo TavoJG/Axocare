@@ -323,6 +323,47 @@ func TestCheckHealthWithStateDoesNotSendReminderBeforeTwentyMinutes(t *testing.T
 	}
 }
 
+func TestCheckHealthWithStateSuppressesRepeatedNotificationAttemptsAfterFailure(t *testing.T) {
+	healthURL := "http://axocare.test/api/health"
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	notifications := 0
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.String() == pushoverAPIURL {
+				notifications++
+				return nil, errors.New("pushover timeout")
+			}
+
+			return nil, errors.New("dial tcp: lookup axocare.jigue.local on 127.0.0.53:53: no such host")
+		}),
+	}
+
+	start := time.Date(2026, 6, 27, 19, 0, 0, 0, time.UTC)
+	err := checkHealth(context.Background(), client, healthURL, validPushoverConfig(), statePath, start, defaultReminderInterval)
+	if err == nil {
+		t.Fatal("expected first notification attempt to fail")
+	}
+
+	if err := checkHealth(context.Background(), client, healthURL, validPushoverConfig(), statePath, start.Add(5*time.Minute), defaultReminderInterval); err != nil {
+		t.Fatalf("second CheckHealthWithState returned error: %v", err)
+	}
+
+	if notifications != 1 {
+		t.Fatalf("expected exactly one notification attempt during repeated failure, got %d", notifications)
+	}
+
+	state, err := readHealthState(statePath)
+	if err != nil {
+		t.Fatalf("failed to read state: %v", err)
+	}
+	if state == nil || state.Healthy {
+		t.Fatalf("expected unhealthy state after notification failure, got %#v", state)
+	}
+	if !state.LastNotifiedAt.Equal(start) {
+		t.Fatalf("expected first notification attempt time to be persisted, got %#v", state)
+	}
+}
+
 func TestLoadEnvFileSetsVariablesAndPreservesExistingEnvironment(t *testing.T) {
 	dir := t.TempDir()
 	envPath := filepath.Join(dir, ".env")

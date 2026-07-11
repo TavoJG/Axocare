@@ -199,10 +199,21 @@ func handleFailure(
 	shouldNotify := shouldNotifyFailure(previousState, failure.Signature, now, reminderInterval)
 	lastNotifiedAt := previousStateLastNotifiedAt(previousState)
 	if shouldNotify {
+		// Persist the failure window before notifying so repeated timer runs do not
+		// fan out duplicate alerts if notification delivery or the network is flaky.
+		lastNotifiedAt = now.UTC()
+		if err := writeHealthState(statePath, HealthCheckState{
+			Healthy:        false,
+			Failure:        failure.Signature,
+			LastNotifiedAt: lastNotifiedAt,
+		}); err != nil {
+			return err
+		}
+
 		if err := notifyPushover(ctx, client, pushover, failure.Message); err != nil {
 			return err
 		}
-		lastNotifiedAt = now.UTC()
+		return nil
 	}
 
 	return writeHealthState(statePath, HealthCheckState{

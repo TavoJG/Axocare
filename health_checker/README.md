@@ -7,7 +7,9 @@ It also sends a recovery notification when a later check succeeds after a
 recorded failure. When `AXOCARE_HEALTH_STATE_FILE` is enabled, repeated runs
 during the same outage only notify once unless the failure mode changes
 (for example DNS failure, timeout, or control-loop error). If the same outage
-continues, it sends a reminder every 20 minutes by default.
+continues, it sends a reminder every 20 minutes by default. The same reminder
+throttle also applies if the checker cannot reach Pushover while recording the
+ongoing outage, which avoids a flood of per-minute retries from a systemd timer.
 
 By default it checks:
 
