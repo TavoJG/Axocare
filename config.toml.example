@@ -10,6 +10,13 @@ target_c = 18.0
 [control]
 interval_seconds = 60
 
+[agent]
+base_url = "http://127.0.0.1:11434/v1"
+model = "your-tool-capable-model"
+api_key = ""
+max_tool_rounds = 6
+timeout_seconds = 30
+
 [camera]
 device = "0"
 enabled = false

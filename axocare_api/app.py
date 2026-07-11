@@ -25,6 +25,7 @@ def create_app(config_path: str | Path | None = None) -> FastAPI:
         settings = ApiSettings.from_toml(resolved_config_path)
         db.migrate(settings.db_path)
         app.state.settings = settings
+        app.state.config_path = str(resolved_config_path)
         yield
 
     app = FastAPI(

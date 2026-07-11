@@ -272,6 +272,7 @@ def test_agent_chat_returns_server_side_agent_answer(tmp_path: Path, monkeypatch
         {
             "question": "How is it now?",
             "history": [{"role": "user", "content": "Show the latest reading."}],
+            "config_path": str(tmp_path / "config.toml"),
             "db_path": str(db_path),
         }
     ]
@@ -290,11 +291,10 @@ def test_agent_chat_rejects_browser_supplied_system_messages(tmp_path: Path) -> 
     assert response.status_code == 422
 
 
-def test_agent_chat_reports_missing_provider_configuration(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delenv("AXOCARE_AGENT_BASE_URL", raising=False)
-    monkeypatch.delenv("AXOCARE_AGENT_MODEL", raising=False)
-
-    with TestClient(create_app(_write_config(tmp_path, tmp_path / "agent.db"))) as client:
+def test_agent_chat_reports_missing_provider_configuration(tmp_path: Path) -> None:
+    with TestClient(
+        create_app(_write_config(tmp_path, tmp_path / "agent.db", include_agent=False))
+    ) as client:
         response = client.post("/api/agent/chat", json={"question": "How is it now?"})
 
     assert response.status_code == 503
@@ -358,6 +358,7 @@ def _write_config(
     *,
     camera_enabled: bool = False,
     camera_stream_url: str | None = None,
+    include_agent: bool = True,
 ) -> Path:
     config_path = tmp_path / "config.toml"
     config_path.write_text(
@@ -373,6 +374,13 @@ notification_threshold_c = 20.0
 
 [control]
 interval_seconds = 60
+
+[agent]
+base_url = {"\"http://127.0.0.1:11434/v1\"" if include_agent else "\"\""}
+model = {"\"test-model\"" if include_agent else "\"\""}
+api_key = ""
+max_tool_rounds = 6
+timeout_seconds = 30
 
 [camera]
 enabled = {"true" if camera_enabled else "false"}

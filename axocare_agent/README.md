@@ -5,15 +5,19 @@ MCP server. It never opens the SQLite database or controls the relay directly.
 
 ## Configure
 
-Set an OpenAI-compatible chat-completions endpoint and model. The endpoint may
-be a hosted provider or a compatible local server.
+Set an OpenAI-compatible chat-completions endpoint and model in `config.toml`.
+The endpoint may be a hosted provider or a compatible local server.
 
-```bash
-export AXOCARE_AGENT_BASE_URL="http://127.0.0.1:11434/v1"
-export AXOCARE_AGENT_MODEL="your-tool-capable-model"
-export AXOCARE_AGENT_DB="./axocare.db"
-# Only needed when the endpoint requires authentication:
-export AXOCARE_AGENT_API_KEY="..."
+```toml
+[database]
+path = "./axocare.db"
+
+[agent]
+base_url = "http://127.0.0.1:11434/v1"
+model = "your-tool-capable-model"
+api_key = ""
+max_tool_rounds = 6
+timeout_seconds = 30
 ```
 
 ## Run
@@ -30,6 +34,9 @@ Or start an interactive session:
 python -m axocare_agent.cli
 ```
 
+Use `--config /path/to/config.toml` to load a different file. `--base-url`,
+`--model`, `--api-key`, and `--db` still override the file for one-off runs.
+
 Use `exit` or `quit` to end an interactive session. The provider must support
 OpenAI-style tool calling; the agent discovers the Axocare MCP tools at startup.
 
@@ -40,7 +47,7 @@ installation instructions are in
 
 ## Dashboard API
 
-When the Axocare FastAPI service is running with the same environment settings,
+When the Axocare FastAPI service is running with the same `config.toml`,
 the dashboard can call the agent without receiving provider credentials:
 
 ```json

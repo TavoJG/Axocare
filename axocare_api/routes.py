@@ -209,6 +209,7 @@ def dashboard(
 )
 async def agent_chat(
     payload: AgentChatRequest,
+    request: Request,
     api_settings: ApiSettings = Depends(settings),
 ) -> AgentChatResponse:
     """Answer a dashboard question through the read-only MCP-grounded agent."""
@@ -216,6 +217,7 @@ async def agent_chat(
         answer = await _answer_agent(
             question=payload.question,
             history=[message.model_dump() for message in payload.history],
+            config_path=request.app.state.config_path,
             db_path=api_settings.db_path,
         )
     except (RuntimeError, ValueError) as exc:
@@ -231,15 +233,17 @@ async def _answer_agent(
     *,
     question: str,
     history: list[dict[str, str]],
+    config_path: str,
     db_path: str,
 ) -> str:
     """Create per-request provider and MCP sessions without exposing credentials."""
     from axocare_agent.agent import AquariumAgent
     from axocare_agent.config import AgentConfig
+
+    config = AgentConfig.from_toml(config_path, db_path=db_path)
     from axocare_agent.mcp_client import AxocareMcpClient
     from axocare_agent.provider import OpenAICompatibleProvider
 
-    config = AgentConfig.from_environment(db_path=db_path)
     provider = OpenAICompatibleProvider(
         base_url=config.base_url,
         model=config.model,
@@ -264,6 +268,7 @@ async def _answer_agent(
 )
 async def agent_chat_stream(
     payload: AgentChatRequest,
+    request: Request,
     api_settings: ApiSettings = Depends(settings),
 ) -> StreamingResponse:
     """Stream safe agent lifecycle events as Server-Sent Events."""
@@ -271,6 +276,7 @@ async def agent_chat_stream(
         _agent_sse_events(
             question=payload.question,
             history=[message.model_dump() for message in payload.history],
+            config_path=request.app.state.config_path,
             db_path=api_settings.db_path,
         ),
         media_type="text/event-stream",
@@ -285,6 +291,7 @@ async def _agent_sse_events(
     *,
     question: str,
     history: list[dict[str, str]],
+    config_path: str,
     db_path: str,
 ) -> AsyncIterator[str]:
     """Yield browser-safe agent progress and completion events."""
@@ -293,6 +300,7 @@ async def _agent_sse_events(
         answer = await _answer_agent(
             question=question,
             history=history,
+            config_path=config_path,
             db_path=db_path,
         )
     except (RuntimeError, ValueError):

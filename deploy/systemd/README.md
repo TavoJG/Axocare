@@ -33,8 +33,10 @@ running before testing Axocare.
 
 ## Install the agent/API service
 
-Copy the samples and protect the environment file, which may contain an API
-key:
+Copy the samples. The environment file is now only for optional service-level
+overrides such as `AXOCARE_CONFIG` or `AXOCARE_CORS_ORIGINS`; provider
+credentials belong in the `[agent]` section of `config.toml`, so protect that
+file appropriately:
 
 ```bash
 sudo install -d -m 0750 -o root -g pi /etc/axocare
@@ -108,8 +110,8 @@ the selected model supports tool calling. To test the two layers separately:
 sudo -u pi /home/pi/axocare/.venv/bin/python -m mcp_server.server \
   --db /home/pi/axocare/axocare.db
 
-sudo -u pi --preserve-env=AXOCARE_AGENT_BASE_URL,AXOCARE_AGENT_MODEL \
-  /home/pi/axocare/.venv/bin/python -m axocare_agent.cli \
+sudo -u pi /home/pi/axocare/.venv/bin/python -m axocare_agent.cli \
+  --config /home/pi/axocare/config.toml \
   --db /home/pi/axocare/axocare.db \
   --question 'How is the aquarium right now?'
 ```

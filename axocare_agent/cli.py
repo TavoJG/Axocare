@@ -6,7 +6,7 @@ import argparse
 import asyncio
 
 from axocare_agent.agent import AquariumAgent
-from axocare_agent.config import AgentConfig
+from axocare_agent.config import DEFAULT_CONFIG_PATH, AgentConfig
 from axocare_agent.mcp_client import AxocareMcpClient
 from axocare_agent.provider import OpenAICompatibleProvider
 
@@ -14,13 +14,19 @@ from axocare_agent.provider import OpenAICompatibleProvider
 def main() -> None:
     """Run a one-off question or an interactive aquarium conversation."""
     parser = argparse.ArgumentParser(description="Ask an LLM grounded Axocare questions.")
+    parser.add_argument(
+        "--config",
+        default=DEFAULT_CONFIG_PATH,
+        help="Path to Axocare config.toml.",
+    )
     parser.add_argument("--db", help="Path to the Axocare SQLite database.")
     parser.add_argument("--base-url", help="OpenAI-compatible provider base URL.")
     parser.add_argument("--model", help="Provider model identifier.")
-    parser.add_argument("--api-key", help="Provider API key; defaults to AXOCARE_AGENT_API_KEY.")
+    parser.add_argument("--api-key", help="Provider API key; defaults to [agent].api_key.")
     parser.add_argument("--question", help="Answer one question, then exit.")
     args = parser.parse_args()
-    config = AgentConfig.from_environment(
+    config = AgentConfig.from_toml(
+        args.config,
         base_url=args.base_url,
         model=args.model,
         api_key=args.api_key,

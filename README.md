@@ -230,9 +230,8 @@ npm test
 ```
 
 The **Ask Axocare** panel uses `POST /api/agent/chat/stream` and displays the
-agent's SSE lifecycle and final response. Configure `AXOCARE_AGENT_BASE_URL`,
-`AXOCARE_AGENT_MODEL`, and optionally `AXOCARE_AGENT_API_KEY` before starting
-FastAPI; provider credentials remain server-side.
+agent's SSE lifecycle and final response. Configure the `[agent]` section in
+`config.toml` before starting FastAPI; provider credentials remain server-side.
 
 Open the interactive API docs:
 
