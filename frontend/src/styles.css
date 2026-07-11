@@ -343,6 +343,10 @@ select {
   margin-bottom: 16px;
 }
 
+.collapse-toggle {
+  flex-shrink: 0;
+}
+
 .muted {
   color: #6b7b82;
 }

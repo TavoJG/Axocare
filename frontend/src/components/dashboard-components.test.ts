@@ -14,9 +14,11 @@ describe("dashboard display components", () => {
     expect(wrapper.find("script").exists()).toBe(false);
   });
 
-  it("shows only the latest twelve readings newest first", () => {
+  it("shows only the latest twelve readings newest first", async () => {
     const readings = Array.from({ length: 14 }, (_, index) => ({ ...reading, id: index + 1, sensor_id: `sensor-${index + 1}` }));
     const wrapper = mount(ReadingsTable, { props: { readings } });
+    expect(wrapper.text()).not.toContain("sensor-14");
+    await wrapper.get("button").trigger("click");
     const rows = wrapper.findAll("tbody tr");
     expect(rows).toHaveLength(12);
     expect(rows[0].text()).toContain("sensor-14");
@@ -25,6 +27,8 @@ describe("dashboard display components", () => {
 
   it("renders relay reasons and the empty state", async () => {
     const wrapper = mount(RelayEvents, { props: { events: dashboard.relay_events } });
+    expect(wrapper.text()).not.toContain("temperature high");
+    await wrapper.get("button").trigger("click");
     expect(wrapper.text()).toContain("temperature high");
     await wrapper.setProps({ events: [] });
     expect(wrapper.text()).toContain("No relay events recorded.");

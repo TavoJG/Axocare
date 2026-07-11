@@ -14,6 +14,12 @@ async function send(): Promise<void> {
   await submit(value);
 }
 
+function handleKeydown(event: KeyboardEvent): void {
+  if (event.key !== "Enter" || event.shiftKey) return;
+  event.preventDefault();
+  void send();
+}
+
 function assistantHtml(content: string): string {
   return renderMarkdown(content);
 }
@@ -42,7 +48,7 @@ watch([messages, status, error], async () => {
     </div>
     <form class="agent-form" @submit.prevent="send">
       <label for="agent-question" class="sr-only">Question for the aquarium assistant</label>
-      <textarea id="agent-question" v-model="question" maxlength="4000" rows="2" placeholder="How is the aquarium right now?" :disabled="processing" @keydown.ctrl.enter.prevent="send" @keydown.meta.enter.prevent="send"></textarea>
+      <textarea id="agent-question" v-model="question" maxlength="4000" rows="2" placeholder="How is the aquarium right now?" :disabled="processing" @keydown="handleKeydown"></textarea>
       <button v-if="processing" type="button" class="button-secondary" @click="cancel">Stop</button>
       <button v-else type="submit" :disabled="!question.trim()">Ask</button>
     </form>
