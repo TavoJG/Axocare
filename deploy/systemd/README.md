@@ -118,3 +118,14 @@ sudo -u pi /home/pi/axocare/.venv/bin/python -m axocare_agent.cli \
 
 The MCP command waits for protocol input, so `Ctrl-C` after confirming it
 starts without an import or database error.
+
+If the journal shows `ModuleNotFoundError: No module named 'mcp'`, the service
+is running in a Python environment that has not had the current dependencies
+installed yet. Reinstall into the same virtual environment referenced by the
+systemd unit, then restart the API service:
+
+```bash
+cd /home/pi/axocare
+.venv/bin/pip install -r requirements.txt
+sudo systemctl restart axocare-agent.service
+```

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from importlib import import_module
 import json
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator
@@ -27,6 +28,11 @@ from axocare_api.settings import DEFAULT_HISTORY_MINUTES, DEFAULT_LIMIT, ApiSett
 router = APIRouter(
     prefix="/api",
 )
+
+AGENT_UNAVAILABLE_MESSAGE = (
+    "The aquarium agent is currently unavailable. Check its server configuration."
+)
+
 
 def settings(request: Request) -> ApiSettings:
     """Return settings loaded during application startup."""
@@ -223,7 +229,7 @@ async def agent_chat(
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(
             status_code=503,
-            detail="The aquarium agent is currently unavailable. Check its server configuration.",
+            detail=AGENT_UNAVAILABLE_MESSAGE,
         ) from exc
 
     return AgentChatResponse(answer=answer)
@@ -237,12 +243,9 @@ async def _answer_agent(
     db_path: str,
 ) -> str:
     """Create per-request provider and MCP sessions without exposing credentials."""
-    from axocare_agent.agent import AquariumAgent
-    from axocare_agent.config import AgentConfig
+    AquariumAgent, AgentConfig, AxocareMcpClient, OpenAICompatibleProvider = _load_agent_runtime()
 
     config = AgentConfig.from_toml(config_path, db_path=db_path)
-    from axocare_agent.mcp_client import AxocareMcpClient
-    from axocare_agent.provider import OpenAICompatibleProvider
 
     provider = OpenAICompatibleProvider(
         base_url=config.base_url,
@@ -306,12 +309,7 @@ async def _agent_sse_events(
     except (RuntimeError, ValueError):
         yield _sse_event(
             "error",
-            {
-                "message": (
-                    "The aquarium agent is currently unavailable. "
-                    "Check its server configuration."
-                )
-            },
+            {"message": AGENT_UNAVAILABLE_MESSAGE},
         )
         return
 
@@ -322,6 +320,29 @@ async def _agent_sse_events(
 def _sse_event(event: str, payload: dict[str, Any]) -> str:
     """Encode one SSE event without exposing internal provider or MCP details."""
     return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
+
+
+def _load_agent_runtime() -> tuple[type[Any], type[Any], type[Any], type[Any]]:
+    """Import agent runtime components with a clearer dependency error for MCP."""
+    try:
+        agent_module = import_module("axocare_agent.agent")
+        config_module = import_module("axocare_agent.config")
+        mcp_client_module = import_module("axocare_agent.mcp_client")
+        provider_module = import_module("axocare_agent.provider")
+    except ModuleNotFoundError as exc:
+        if exc.name == "mcp":
+            raise RuntimeError(
+                "The Python 'mcp' package is not installed in the active environment. "
+                "Reinstall dependencies with 'pip install -r requirements.txt' and restart the API service."
+            ) from exc
+        raise
+
+    return (
+        agent_module.AquariumAgent,
+        config_module.AgentConfig,
+        mcp_client_module.AxocareMcpClient,
+        provider_module.OpenAICompatibleProvider,
+    )
 
 
 @router.get("/camera/stream", tags=["camera"])

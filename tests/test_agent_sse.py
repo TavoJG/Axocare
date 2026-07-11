@@ -40,6 +40,7 @@ async def _collect_events() -> list[str]:
         async for event in routes._agent_sse_events(
             question="How is the aquarium?",
             history=[],
+            config_path="/tmp/config.toml",
             db_path="/tmp/axocare.db",
         )
     ]
