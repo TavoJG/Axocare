@@ -49,3 +49,8 @@ export type AgentChatMessage = {
   role: "user" | "assistant";
   content: string;
 };
+
+export type AgentAnswerPayload = {
+  answer: string;
+  conversation_id: string;
+};

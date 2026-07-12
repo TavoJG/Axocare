@@ -251,12 +251,16 @@ def test_cors_allows_configured_origin(tmp_path: Path, monkeypatch) -> None:
 def test_agent_chat_returns_server_side_agent_answer(tmp_path: Path, monkeypatch) -> None:
     db_path = tmp_path / "agent.db"
     calls: list[dict[str, object]] = []
+    conversation_id = "conversation-123"
 
     async def fake_answer_agent(**kwargs) -> str:
         calls.append(kwargs)
         return "The aquarium is stable."
 
     monkeypatch.setattr(routes, "_answer_agent", fake_answer_agent)
+    monkeypatch.setattr(routes, "_prepare_agent_conversation", lambda *args, **kwargs: conversation_id)
+    monkeypatch.setattr(routes, "_agent_history", lambda *args, **kwargs: [{"role": "user", "content": "Show the latest reading."}])
+    monkeypatch.setattr(db, "append_agent_messages", lambda *args, **kwargs: None)
     with TestClient(create_app(_write_config(tmp_path, db_path))) as client:
         response = client.post(
             "/api/agent/chat",
@@ -267,7 +271,10 @@ def test_agent_chat_returns_server_side_agent_answer(tmp_path: Path, monkeypatch
         )
 
     assert response.status_code == 200
-    assert response.json() == {"answer": "The aquarium is stable."}
+    assert response.json() == {
+        "conversation_id": conversation_id,
+        "answer": "The aquarium is stable.",
+    }
     assert calls == [
         {
             "question": "How is it now?",
@@ -281,6 +288,37 @@ def test_agent_chat_returns_server_side_agent_answer(tmp_path: Path, monkeypatch
                 "Notification threshold: 20.0 C."
             ),
         }
+    ]
+
+
+def test_agent_chat_persists_conversation_history_across_requests(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "agent-memory.db"
+    prompts: list[dict[str, object]] = []
+
+    async def fake_answer_agent(**kwargs) -> str:
+        prompts.append(kwargs)
+        return f"Answer #{len(prompts)}"
+
+    monkeypatch.setattr(routes, "_answer_agent", fake_answer_agent)
+    with TestClient(create_app(_write_config(tmp_path, db_path))) as client:
+        first = client.post("/api/agent/chat", json={"question": "How is it now?"})
+        first_payload = first.json()
+        second = client.post(
+            "/api/agent/chat",
+            json={
+                "question": "And the cooling?",
+                "conversation_id": first_payload["conversation_id"],
+            },
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first_payload["answer"] == "Answer #1"
+    assert second.json()["answer"] == "Answer #2"
+    assert prompts[0]["history"] == []
+    assert prompts[1]["history"] == [
+        {"role": "user", "content": "How is it now?"},
+        {"role": "assistant", "content": "Answer #1"},
     ]
 
 

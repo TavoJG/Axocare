@@ -1,5 +1,5 @@
 import { onBeforeUnmount, ref } from "vue";
-import type { AgentChatMessage } from "./types";
+import type { AgentAnswerPayload, AgentChatMessage } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -22,12 +22,12 @@ export function useAgentChat(fetcher: typeof fetch = fetch) {
   const processing = ref(false);
   const status = ref<string | null>(null);
   const error = ref<string | null>(null);
+  const conversationId = ref<string | null>(null);
   let controller: AbortController | null = null;
 
   async function submit(rawQuestion: string): Promise<void> {
     const question = rawQuestion.trim();
     if (!question || processing.value) return;
-    const history = messages.value.slice(-12);
     messages.value.push({ role: "user", content: question });
     processing.value = true;
     status.value = "Thinking…";
@@ -38,7 +38,7 @@ export function useAgentChat(fetcher: typeof fetch = fetch) {
       const response = await fetcher(`${API_BASE}/api/agent/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-        body: JSON.stringify({ question, history }),
+        body: JSON.stringify({ question, conversation_id: conversationId.value }),
         signal: controller.signal
       });
       if (!response.ok) throw new Error(`Agent API returned ${response.status}`);
@@ -57,8 +57,9 @@ export function useAgentChat(fetcher: typeof fetch = fetch) {
           const item = parseSseBlock(block);
           if (!item) continue;
           const data = item.data as Record<string, unknown>;
+          if (typeof data.conversation_id === "string") conversationId.value = data.conversation_id;
           if (item.event === "status") status.value = data.stage === "processing" ? "Checking aquarium data…" : String(data.stage ?? "Thinking…");
-          if (item.event === "answer" && typeof data.answer === "string") messages.value.push({ role: "assistant", content: data.answer });
+          if (item.event === "answer" && typeof data.answer === "string") messages.value.push(({ role: "assistant", content: (data as AgentAnswerPayload).answer }));
           if (item.event === "error") throw new Error(typeof data.message === "string" ? data.message : "The aquarium agent is unavailable.");
           if (item.event === "done") completed = true;
         }
@@ -76,7 +77,14 @@ export function useAgentChat(fetcher: typeof fetch = fetch) {
   }
 
   function cancel(): void { controller?.abort(); }
-  function clear(): void { if (!processing.value) { messages.value = []; error.value = null; status.value = null; } }
+  function clear(): void {
+    if (!processing.value) {
+      messages.value = [];
+      error.value = null;
+      status.value = null;
+      conversationId.value = null;
+    }
+  }
   onBeforeUnmount(cancel);
-  return { messages, processing, status, error, submit, cancel, clear };
+  return { messages, processing, status, error, submit, cancel, clear, conversationId };
 }

@@ -24,7 +24,7 @@ describe("agent SSE integration", () => {
   it("handles events split across arbitrary response chunks", async () => {
     const fetcher = vi.fn().mockResolvedValue(streamResponse([
       'event: status\ndata: {"stage":"pro',
-      'cessing"}\n\nevent: answer\ndata: {"answer":"The tank is stable."}\n',
+      'cessing","conversation_id":"conv-1"}\n\nevent: answer\ndata: {"answer":"The tank is stable.","conversation_id":"conv-1"}\n',
       '\nevent: done\ndata: {}\n\n'
     ]));
     const { state } = mountChat(fetcher as typeof fetch);
@@ -34,20 +34,22 @@ describe("agent SSE integration", () => {
       { role: "assistant", content: "The tank is stable." }
     ]);
     const request = JSON.parse(fetcher.mock.calls[0][1].body);
-    expect(request).toEqual({ question: "How is it?", history: [] });
+    expect(request).toEqual({ question: "How is it?", conversation_id: null });
     expect(state.error.value).toBeNull();
+    expect(state.conversationId.value).toBe("conv-1");
   });
 
-  it("sends at most twelve prior messages and exposes safe stream errors", async () => {
+  it("reuses the stored conversation id and exposes safe stream errors", async () => {
     const fetcher = vi.fn().mockResolvedValue(streamResponse([
+      'event: status\ndata: {"stage":"processing","conversation_id":"conv-2"}\n\n',
       'event: error\ndata: {"message":"Agent unavailable"}\n\n'
     ]));
     const { state } = mountChat(fetcher as typeof fetch);
     state.messages.value = Array.from({ length: 14 }, (_, index) => ({ role: index % 2 ? "assistant" : "user", content: `message ${index}` } as const));
+    state.conversationId.value = "conv-2";
     await state.submit("latest?");
     const request = JSON.parse(fetcher.mock.calls[0][1].body);
-    expect(request.history).toHaveLength(12);
-    expect(request.history[0].content).toBe("message 2");
+    expect(request).toEqual({ question: "latest?", conversation_id: "conv-2" });
     expect(state.error.value).toBe("Agent unavailable");
   });
 });

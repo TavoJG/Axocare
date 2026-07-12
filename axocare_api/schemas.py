@@ -97,10 +97,12 @@ class AgentChatRequest(BaseModel):
     """Browser-safe input for one grounded aquarium-agent response."""
 
     question: str = Field(min_length=1, max_length=4_000)
+    conversation_id: str | None = Field(default=None, min_length=1, max_length=255)
     history: list[AgentChatMessage] = Field(default_factory=list, max_length=12)
 
 
 class AgentChatResponse(BaseModel):
     """The agent's final natural-language answer."""
 
+    conversation_id: str
     answer: str

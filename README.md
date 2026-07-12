@@ -232,6 +232,8 @@ npm test
 The **Ask Axocare** panel uses `POST /api/agent/chat/stream` and displays the
 agent's SSE lifecycle and final response. Configure the `[agent]` section in
 `config.toml` before starting FastAPI; provider credentials remain server-side.
+The API returns a `conversation_id` so the frontend can resume a persisted chat
+without resending the full transcript.
 
 Open the interactive API docs:
 

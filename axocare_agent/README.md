@@ -53,14 +53,15 @@ the dashboard can call the agent without receiving provider credentials:
 ```json
 POST /api/agent/chat
 {
-  "question": "How is the aquarium right now?",
-  "history": []
+  "question": "How is the aquarium right now?"
 }
 ```
 
-The response is `{ "answer": "..." }`. History accepts up to 12 prior
-`user` or `assistant` messages; system and tool messages are not accepted from
-the browser.
+The response is `{ "conversation_id": "...", "answer": "..." }`. Reuse the
+returned `conversation_id` on later requests to continue the same persisted
+chat. A browser may still send up to 12 prior `user` or `assistant` messages
+to bootstrap a brand-new conversation; system and tool messages are not
+accepted from the browser.
 
 ### Streaming status
 

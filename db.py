@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Iterable
+from uuid import uuid4
 
 DEFAULT_DB_PATH = "axocare.db"
 DEFAULT_MIGRATIONS_PATH = Path(__file__).with_name("migrations")
@@ -227,6 +229,97 @@ def temperatures_since(
                 (f"-{minutes} minutes",),
             )
         )
+
+
+def create_agent_conversation(
+    *,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> str:
+    """Create one persisted agent conversation and return its id."""
+    conversation_id = str(uuid4())
+    with connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO agent_conversations (id)
+            VALUES (?)
+            """,
+            (conversation_id,),
+        )
+        conn.commit()
+    return conversation_id
+
+
+def agent_conversation_exists(
+    conversation_id: str,
+    *,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> bool:
+    """Return whether the requested agent conversation exists."""
+    with connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT 1
+            FROM agent_conversations
+            WHERE id = ?
+            LIMIT 1
+            """,
+            (conversation_id,),
+        ).fetchone()
+    return row is not None
+
+
+def agent_messages(
+    conversation_id: str,
+    limit: int = 12,
+    *,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> list[sqlite3.Row]:
+    """Return recent persisted agent messages in chronological order."""
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT role, content
+            FROM (
+                SELECT id, role, content, created_at
+                FROM agent_messages
+                WHERE conversation_id = ?
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+            )
+            ORDER BY created_at ASC, id ASC
+            """,
+            (conversation_id, limit),
+        ).fetchall()
+    return list(rows)
+
+
+def append_agent_messages(
+    conversation_id: str,
+    messages: Sequence[tuple[str, str]],
+    *,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> None:
+    """Persist one or more agent messages and bump the conversation timestamp."""
+    if not messages:
+        return
+
+    with connect(db_path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO agent_messages (conversation_id, role, content)
+            VALUES (?, ?, ?)
+            """,
+            [(conversation_id, role, content) for role, content in messages],
+        )
+        conn.execute(
+            """
+            UPDATE agent_conversations
+            SET updated_at = datetime('now')
+            WHERE id = ?
+            """,
+            (conversation_id,),
+        )
+        conn.commit()
 
 
 def _ensure_migrations_table(conn: sqlite3.Connection) -> None:

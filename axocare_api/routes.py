@@ -219,10 +219,16 @@ async def agent_chat(
     api_settings: ApiSettings = Depends(settings),
 ) -> AgentChatResponse:
     """Answer a dashboard question through the read-only MCP-grounded agent."""
+    conversation_id = _prepare_agent_conversation(
+        payload.conversation_id,
+        payload.history,
+        db_path=api_settings.db_path,
+    )
+    history = _agent_history(conversation_id, db_path=api_settings.db_path)
     try:
         answer = await _answer_agent(
             question=payload.question,
-            history=[message.model_dump() for message in payload.history],
+            history=history,
             config_path=request.app.state.config_path,
             db_path=api_settings.db_path,
             system_context=_agent_system_context(api_settings),
@@ -233,7 +239,12 @@ async def agent_chat(
             detail=AGENT_UNAVAILABLE_MESSAGE,
         ) from exc
 
-    return AgentChatResponse(answer=answer)
+    db.append_agent_messages(
+        conversation_id,
+        [("user", payload.question), ("assistant", answer)],
+        db_path=api_settings.db_path,
+    )
+    return AgentChatResponse(conversation_id=conversation_id, answer=answer)
 
 
 async def _answer_agent(
@@ -277,10 +288,16 @@ async def agent_chat_stream(
     api_settings: ApiSettings = Depends(settings),
 ) -> StreamingResponse:
     """Stream safe agent lifecycle events as Server-Sent Events."""
+    conversation_id = _prepare_agent_conversation(
+        payload.conversation_id,
+        payload.history,
+        db_path=api_settings.db_path,
+    )
     return StreamingResponse(
         _agent_sse_events(
+            conversation_id=conversation_id,
             question=payload.question,
-            history=[message.model_dump() for message in payload.history],
+            history=_agent_history(conversation_id, db_path=api_settings.db_path),
             config_path=request.app.state.config_path,
             db_path=api_settings.db_path,
             system_context=_agent_system_context(api_settings),
@@ -295,6 +312,7 @@ async def agent_chat_stream(
 
 async def _agent_sse_events(
     *,
+    conversation_id: str,
     question: str,
     history: list[dict[str, str]],
     config_path: str,
@@ -302,7 +320,7 @@ async def _agent_sse_events(
     system_context: str | None = None,
 ) -> AsyncIterator[str]:
     """Yield browser-safe agent progress and completion events."""
-    yield _sse_event("status", {"stage": "processing"})
+    yield _sse_event("status", {"stage": "processing", "conversation_id": conversation_id})
     try:
         answer = await _answer_agent(
             question=question,
@@ -318,7 +336,12 @@ async def _agent_sse_events(
         )
         return
 
-    yield _sse_event("answer", {"answer": answer})
+    db.append_agent_messages(
+        conversation_id,
+        [("user", question), ("assistant", answer)],
+        db_path=db_path,
+    )
+    yield _sse_event("answer", {"answer": answer, "conversation_id": conversation_id})
     yield _sse_event("done", {})
 
 
@@ -342,6 +365,40 @@ def _agent_system_context(api_settings: ApiSettings) -> str:
             f"Notification threshold: {notification_threshold}.",
         ]
     )
+
+
+def _prepare_agent_conversation(
+    conversation_id: str | None,
+    history: list[Any],
+    *,
+    db_path: str,
+) -> str:
+    """Resolve or create a persisted agent conversation for one chat request."""
+    if conversation_id is not None:
+        if not db.agent_conversation_exists(conversation_id, db_path=db_path):
+            raise HTTPException(status_code=404, detail="Agent conversation not found.")
+        return conversation_id
+
+    created_conversation_id = db.create_agent_conversation(db_path=db_path)
+    bootstrap_messages = [
+        (message.role, message.content) if hasattr(message, "role") else (message["role"], message["content"])
+        for message in history
+    ]
+    db.append_agent_messages(created_conversation_id, bootstrap_messages, db_path=db_path)
+    return created_conversation_id
+
+
+def _agent_history(
+    conversation_id: str,
+    *,
+    db_path: str,
+    limit: int = 12,
+) -> list[dict[str, str]]:
+    """Load recent persisted browser-safe messages for the agent prompt."""
+    return [
+        {"role": str(row["role"]), "content": str(row["content"])}
+        for row in db.agent_messages(conversation_id, limit=limit, db_path=db_path)
+    ]
 
 
 def _load_agent_runtime() -> tuple[type[Any], type[Any], type[Any], type[Any]]:
