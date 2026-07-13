@@ -6,16 +6,25 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from axocare_ai.predict import predict_from_db
 from mcp_server import db
 
 DEFAULT_DB_PATH = "axocare.db"
+DEFAULT_MODELS_DIR = "axocare_ai/models"
 _db_path = DEFAULT_DB_PATH
+_models_dir = DEFAULT_MODELS_DIR
 
 
 def configure_database(db_path: str | Path) -> None:
     """Set the database used by subsequently invoked MCP tools."""
     global _db_path
     _db_path = str(db_path)
+
+
+def configure_models_dir(models_dir: str | Path) -> None:
+    """Set the model directory used by subsequently invoked MCP tools."""
+    global _models_dir
+    _models_dir = str(models_dir)
 
 
 def get_current_status() -> dict[str, Any]:
@@ -50,16 +59,10 @@ def get_relay_events(hours: int) -> dict[str, Any]:
 
 
 def predict_temperature(horizon_minutes: int) -> dict[str, Any]:
-    """Report prediction availability for a supported future horizon in minutes."""
-    _validate_range("horizon_minutes", horizon_minutes, minimum=1, maximum=30)
-    return {
-        "available": False,
-        "horizon_minutes": horizon_minutes,
-        "message": (
-            "Temperature prediction is unavailable because the local AI model "
-            "has not been implemented and trained yet."
-        ),
-    }
+    """Predict aquarium temperature for supported future horizons."""
+    if horizon_minutes not in {10, 15, 30}:
+        raise ValueError("horizon_minutes must be one of 10, 15, or 30.")
+    return predict_from_db(_db_path, horizon_minutes, models_dir=_models_dir)
 
 
 def explain_temperature_trend(minutes: int) -> dict[str, Any]:

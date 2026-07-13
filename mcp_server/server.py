@@ -33,8 +33,14 @@ def main() -> None:
         default=tools.DEFAULT_DB_PATH,
         help="Path to the Axocare SQLite database (default: axocare.db).",
     )
+    parser.add_argument(
+        "--models-dir",
+        default=tools.DEFAULT_MODELS_DIR,
+        help="Path to the directory containing trained temperature models.",
+    )
     args = parser.parse_args()
     tools.configure_database(args.db)
+    tools.configure_models_dir(args.models_dir)
     mcp.run(transport="stdio")
 
 
