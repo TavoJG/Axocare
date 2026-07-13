@@ -259,7 +259,7 @@ def test_agent_chat_returns_server_side_agent_answer(tmp_path: Path, monkeypatch
 
     monkeypatch.setattr(routes, "_answer_agent", fake_answer_agent)
     monkeypatch.setattr(routes, "_prepare_agent_conversation", lambda *args, **kwargs: conversation_id)
-    monkeypatch.setattr(routes, "_agent_history", lambda *args, **kwargs: [{"role": "user", "content": "Show the latest reading."}])
+    monkeypatch.setattr(routes, "_agent_prompt_history", lambda *args, **kwargs: [{"role": "user", "content": "Show the latest reading."}])
     monkeypatch.setattr(db, "append_agent_messages", lambda *args, **kwargs: None)
     with TestClient(create_app(_write_config(tmp_path, db_path))) as client:
         response = client.post(
@@ -320,6 +320,35 @@ def test_agent_chat_persists_conversation_history_across_requests(tmp_path: Path
         {"role": "user", "content": "How is it now?"},
         {"role": "assistant", "content": "Answer #1"},
     ]
+
+
+def test_agent_chat_uses_summary_memory_for_long_conversations(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "agent-summary.db"
+    prompts: list[dict[str, object]] = []
+
+    async def fake_answer_agent(**kwargs) -> str:
+        prompts.append(kwargs)
+        return f"Answer #{len(prompts)}"
+
+    monkeypatch.setattr(routes, "_answer_agent", fake_answer_agent)
+    with TestClient(create_app(_write_config(tmp_path, db_path))) as client:
+        response = client.post("/api/agent/chat", json={"question": "Question 1"})
+        conversation_id = response.json()["conversation_id"]
+        for index in range(2, 7):
+            follow_up = client.post(
+                "/api/agent/chat",
+                json={
+                    "question": f"Question {index}",
+                    "conversation_id": conversation_id,
+                },
+            )
+            assert follow_up.status_code == 200
+
+    final_history = prompts[-1]["history"]
+    assert final_history[0]["role"] == "system"
+    assert final_history[0]["content"].startswith("Conversation memory summary:\n")
+    assert any(item["content"] == "Question 6" for item in final_history if item["role"] == "user") is False
+    assert any("Question 1" in item["content"] for item in final_history if item["role"] == "system")
 
 
 def test_agent_chat_rejects_browser_supplied_system_messages(tmp_path: Path) -> None:

@@ -242,6 +242,8 @@ agent's SSE lifecycle and final response. Configure the `[agent]` section in
 `config.toml` before starting FastAPI; provider credentials remain server-side.
 The API returns a `conversation_id` so the frontend can resume a persisted chat
 without resending the full transcript.
+Long conversations are compacted into a rolling server-side summary plus recent
+turns to keep prompt size bounded.
 
 Open the interactive API docs:
 

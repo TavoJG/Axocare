@@ -23,7 +23,7 @@ def test_agent_chat_uses_api_database_and_returns_answer(monkeypatch) -> None:
 
     monkeypatch.setattr(routes, "_answer_agent", fake_answer_agent)
     monkeypatch.setattr(routes, "_prepare_agent_conversation", lambda *args, **kwargs: conversation_id)
-    monkeypatch.setattr(routes, "_agent_history", lambda *args, **kwargs: [{"role": "user", "content": "Show the latest reading."}])
+    monkeypatch.setattr(routes, "_agent_prompt_history", lambda *args, **kwargs: [{"role": "user", "content": "Show the latest reading."}])
     append_calls = []
     monkeypatch.setattr(
         db,
@@ -78,7 +78,7 @@ def test_agent_chat_masks_agent_configuration_errors(monkeypatch) -> None:
 
     monkeypatch.setattr(routes, "_answer_agent", failing_answer_agent)
     monkeypatch.setattr(routes, "_prepare_agent_conversation", lambda *args, **kwargs: "conversation-123")
-    monkeypatch.setattr(routes, "_agent_history", lambda *args, **kwargs: [])
+    monkeypatch.setattr(routes, "_agent_prompt_history", lambda *args, **kwargs: [])
 
     with pytest.raises(HTTPException) as error:
         asyncio.run(
@@ -127,6 +127,89 @@ def test_prepare_agent_conversation_rejects_unknown_conversation_id(monkeypatch)
 
     assert error.value.status_code == 404
     assert error.value.detail == "Agent conversation not found."
+
+
+def test_agent_prompt_history_includes_summary_and_recent_messages(monkeypatch) -> None:
+    monkeypatch.setattr(
+        db,
+        "agent_summary",
+        lambda *args, **kwargs: {
+            "summary": "- User: Earlier question\n- Assistant: Earlier answer",
+            "summarized_message_count": 2,
+        },
+    )
+    monkeypatch.setattr(
+        db,
+        "agent_messages_since",
+        lambda *args, **kwargs: [
+            {"role": "user", "content": "Most recent question"},
+            {"role": "assistant", "content": "Most recent answer"},
+        ],
+    )
+
+    history = routes._agent_prompt_history("conversation-123", db_path="/tmp/axocare.db")
+
+    assert history == [
+        {
+            "role": "system",
+            "content": (
+                "Conversation memory summary:\n"
+                "- User: Earlier question\n"
+                "- Assistant: Earlier answer"
+            ),
+        },
+        {"role": "user", "content": "Most recent question"},
+        {"role": "assistant", "content": "Most recent answer"},
+    ]
+
+
+def test_agent_prompt_history_rolls_older_messages_into_summary(monkeypatch) -> None:
+    monkeypatch.setattr(db, "agent_summary", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        db,
+        "agent_messages_since",
+        lambda *args, **kwargs: [
+            {"role": "user", "content": "Question 1"},
+            {"role": "assistant", "content": "Answer 1"},
+            {"role": "user", "content": "Question 2"},
+        ],
+    )
+    upsert_calls = []
+    monkeypatch.setattr(
+        db,
+        "upsert_agent_summary",
+        lambda conversation_id, summary, summarized_message_count, *, db_path: upsert_calls.append(
+            {
+                "conversation_id": conversation_id,
+                "summary": summary,
+                "summarized_message_count": summarized_message_count,
+                "db_path": db_path,
+            }
+        ),
+    )
+
+    history = routes._agent_prompt_history(
+        "conversation-123",
+        db_path="/tmp/axocare.db",
+        recent_limit=2,
+    )
+
+    assert upsert_calls == [
+        {
+            "conversation_id": "conversation-123",
+            "summary": "- User: Question 1",
+            "summarized_message_count": 1,
+            "db_path": "/tmp/axocare.db",
+        }
+    ]
+    assert history == [
+        {
+            "role": "system",
+            "content": "Conversation memory summary:\n- User: Question 1",
+        },
+        {"role": "assistant", "content": "Answer 1"},
+        {"role": "user", "content": "Question 2"},
+    ]
 
 
 def _settings() -> ApiSettings:
