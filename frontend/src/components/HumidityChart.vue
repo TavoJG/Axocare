@@ -2,7 +2,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Chart } from "../chart";
 import { getChartPalette } from "../chartTheme";
-import { formatTime } from "../formatters";
+import { formatTemperature, formatTime } from "../formatters";
 import type { DashboardResponse } from "../types";
 
 const props = defineProps<{ payload: DashboardResponse; themeKey: string; title: string }>();
@@ -19,7 +19,7 @@ function render(): void {
   ];
   const options = {
     responsive: true, maintainAspectRatio: false, interaction: { intersect: false, mode: "index" as const },
-    plugins: { legend: { labels: { boxWidth: 12, color: palette.legend, usePointStyle: true } }, tooltip: { callbacks: { label(context: { parsed: { y: number | null }; dataset: { label?: string; yAxisID?: string } }) { const value = context.parsed.y; const unit = context.dataset.yAxisID === "yTemp" ? "C" : "%"; const digits = unit === "C" ? 2 : 1; return `${context.dataset.label}: ${value != null && Number.isFinite(value) ? value.toFixed(digits) : "No data"} ${unit}`; } } } },
+    plugins: { legend: { labels: { boxWidth: 12, color: palette.legend, usePointStyle: true } }, tooltip: { callbacks: { label(context: { parsed: { y: number | null }; dataset: { label?: string; yAxisID?: string } }) { const value = context.parsed.y; return context.dataset.yAxisID === "yTemp" ? `${context.dataset.label}: ${formatTemperature(value, 1)}` : `${context.dataset.label}: ${value != null && Number.isFinite(value) ? value.toFixed(1) : "No data"} %`; } } } },
     scales: { x: { grid: { color: palette.grid }, ticks: { autoSkip: true, maxTicksLimit: 8, color: palette.axis } }, y: { grid: { color: palette.grid }, ticks: { color: palette.axis, callback: (value: string | number) => `${value} %` } }, yTemp: { position: "right" as const, grid: { drawOnChartArea: false }, ticks: { color: palette.info, callback: (value: string | number) => `${value} C` } } }
   };
   if (chart) { chart.data.labels = labels; chart.data.datasets = datasets; chart.options = options; chart.update(); return; }

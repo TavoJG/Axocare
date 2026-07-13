@@ -1,7 +1,7 @@
 import type { TemperatureReading } from "./types";
 
-export function formatTemperature(value: number | null | undefined): string {
-  return value == null ? "No data" : `${value.toFixed(2)} C`;
+export function formatTemperature(value: number | null | undefined, digits = 2): string {
+  return value == null ? "No data" : `${value.toFixed(digits)} C`;
 }
 
 export function formatPercent(value: number | null | undefined): string {

@@ -5,6 +5,7 @@ import { reading } from "./test/fixtures";
 describe("dashboard formatters", () => {
   it("formats measurements and missing values", () => {
     expect(formatTemperature(18.256)).toBe("18.26 C");
+    expect(formatTemperature(21.54, 1)).toBe("21.5 C");
     expect(formatTemperature(null)).toBe("No data");
     expect(formatPercent(62.44)).toBe("62.4 %");
     expect(formatPressure(1012.64)).toBe("1012.6 hPa");
