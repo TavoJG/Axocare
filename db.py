@@ -293,6 +293,27 @@ def agent_messages(
     return list(rows)
 
 
+def agent_messages_since(
+    conversation_id: str,
+    offset: int = 0,
+    *,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> list[sqlite3.Row]:
+    """Return agent messages in chronological order after the given offset."""
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT role, content
+            FROM agent_messages
+            WHERE conversation_id = ?
+            ORDER BY created_at ASC, id ASC
+            LIMIT -1 OFFSET ?
+            """,
+            (conversation_id, offset),
+        ).fetchall()
+    return list(rows)
+
+
 def append_agent_messages(
     conversation_id: str,
     messages: Sequence[tuple[str, str]],
@@ -318,6 +339,52 @@ def append_agent_messages(
             WHERE id = ?
             """,
             (conversation_id,),
+        )
+        conn.commit()
+
+
+def agent_summary(
+    conversation_id: str,
+    *,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> sqlite3.Row | None:
+    """Return the persisted summary row for one conversation, if present."""
+    with connect(db_path) as conn:
+        return conn.execute(
+            """
+            SELECT summary, summarized_message_count
+            FROM agent_conversation_summaries
+            WHERE conversation_id = ?
+            LIMIT 1
+            """,
+            (conversation_id,),
+        ).fetchone()
+
+
+def upsert_agent_summary(
+    conversation_id: str,
+    summary: str,
+    summarized_message_count: int,
+    *,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> None:
+    """Persist the latest rolling summary for one conversation."""
+    with connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO agent_conversation_summaries (
+                conversation_id,
+                summary,
+                summarized_message_count,
+                updated_at
+            )
+            VALUES (?, ?, ?, datetime('now'))
+            ON CONFLICT(conversation_id) DO UPDATE SET
+                summary = excluded.summary,
+                summarized_message_count = excluded.summarized_message_count,
+                updated_at = excluded.updated_at
+            """,
+            (conversation_id, summary, summarized_message_count),
         )
         conn.commit()
 

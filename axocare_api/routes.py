@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
 
 import db
+from axocare_agent.memory import build_summary, summary_message
 from axocare_api.schemas import (
     AgentChatRequest,
     AgentChatResponse,
@@ -32,6 +33,7 @@ router = APIRouter(
 AGENT_UNAVAILABLE_MESSAGE = (
     "The aquarium agent is currently unavailable. Check its server configuration."
 )
+AGENT_RECENT_MESSAGE_LIMIT = 8
 
 
 def settings(request: Request) -> ApiSettings:
@@ -224,7 +226,7 @@ async def agent_chat(
         payload.history,
         db_path=api_settings.db_path,
     )
-    history = _agent_history(conversation_id, db_path=api_settings.db_path)
+    history = _agent_prompt_history(conversation_id, db_path=api_settings.db_path)
     try:
         answer = await _answer_agent(
             question=payload.question,
@@ -297,7 +299,7 @@ async def agent_chat_stream(
         _agent_sse_events(
             conversation_id=conversation_id,
             question=payload.question,
-            history=_agent_history(conversation_id, db_path=api_settings.db_path),
+            history=_agent_prompt_history(conversation_id, db_path=api_settings.db_path),
             config_path=request.app.state.config_path,
             db_path=api_settings.db_path,
             system_context=_agent_system_context(api_settings),
@@ -388,17 +390,45 @@ def _prepare_agent_conversation(
     return created_conversation_id
 
 
-def _agent_history(
+def _agent_prompt_history(
     conversation_id: str,
     *,
     db_path: str,
-    limit: int = 12,
+    recent_limit: int = AGENT_RECENT_MESSAGE_LIMIT,
 ) -> list[dict[str, str]]:
-    """Load recent persisted browser-safe messages for the agent prompt."""
-    return [
+    """Load summary memory plus recent raw messages for the agent prompt."""
+    summary_row = db.agent_summary(conversation_id, db_path=db_path)
+    summary_text = str(summary_row["summary"]) if summary_row is not None else None
+    summarized_count = int(summary_row["summarized_message_count"]) if summary_row is not None else 0
+    pending_rows = db.agent_messages_since(conversation_id, offset=summarized_count, db_path=db_path)
+
+    if len(pending_rows) > recent_limit:
+        rows_to_summarize = pending_rows[:-recent_limit]
+        summary_text = build_summary(
+            summary_text,
+            [(str(row["role"]), str(row["content"])) for row in rows_to_summarize],
+        )
+        summarized_count += len(rows_to_summarize)
+        db.upsert_agent_summary(
+            conversation_id,
+            summary_text,
+            summarized_count,
+            db_path=db_path,
+        )
+        pending_rows = pending_rows[-recent_limit:]
+
+    prompt_history: list[dict[str, str]] = []
+    memory_message = summary_message(summary_text)
+    if memory_message is not None:
+        prompt_history.append(memory_message)
+
+    prompt_history.extend(
+        [
         {"role": str(row["role"]), "content": str(row["content"])}
-        for row in db.agent_messages(conversation_id, limit=limit, db_path=db_path)
-    ]
+            for row in pending_rows
+        ]
+    )
+    return prompt_history
 
 
 def _load_agent_runtime() -> tuple[type[Any], type[Any], type[Any], type[Any]]:

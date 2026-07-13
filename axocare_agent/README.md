@@ -63,6 +63,10 @@ chat. A browser may still send up to 12 prior `user` or `assistant` messages
 to bootstrap a brand-new conversation; system and tool messages are not
 accepted from the browser.
 
+The backend stores the full conversation, but the prompt uses a rolling
+summary plus the most recent raw turns so memory stays durable without growing
+unbounded in token cost.
+
 ### Streaming status
 
 `POST /api/agent/chat` is **not streaming**. It waits for the MCP tool calls
