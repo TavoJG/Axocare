@@ -229,6 +229,14 @@ cd frontend
 npm test
 ```
 
+When you change frontend source or assets, rebuild the production bundle and
+commit the resulting `frontend/dist` updates with your branch:
+
+```bash
+cd frontend
+npm run build
+```
+
 The **Ask Axocare** panel uses `POST /api/agent/chat/stream` and displays the
 agent's SSE lifecycle and final response. Configure the `[agent]` section in
 `config.toml` before starting FastAPI; provider credentials remain server-side.
