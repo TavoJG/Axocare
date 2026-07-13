@@ -434,6 +434,9 @@ def _write_config(
     include_agent: bool = True,
 ) -> Path:
     config_path = tmp_path / "config.toml"
+    agent_base_url = '"http://127.0.0.1:11434/v1"' if include_agent else '""'
+    agent_model = '"test-model"' if include_agent else '""'
+    camera_enabled_literal = "true" if camera_enabled else "false"
     config_path.write_text(
         f"""
 [database]
@@ -449,14 +452,14 @@ notification_threshold_c = 20.0
 interval_seconds = 60
 
 [agent]
-base_url = {"\"http://127.0.0.1:11434/v1\"" if include_agent else "\"\""}
-model = {"\"test-model\"" if include_agent else "\"\""}
+base_url = {agent_base_url}
+model = {agent_model}
 api_key = ""
 max_tool_rounds = 6
 timeout_seconds = 30
 
 [camera]
-enabled = {"true" if camera_enabled else "false"}
+enabled = {camera_enabled_literal}
 stream_url = "{camera_stream_url or ''}"
 """.strip(),
         encoding="utf-8",
