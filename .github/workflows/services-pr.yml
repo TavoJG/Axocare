@@ -1,0 +1,107 @@
+name: Service PR Checks
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      python_backend: ${{ steps.filter.outputs.python_backend }}
+      camera_service: ${{ steps.filter.outputs.camera_service }}
+      health_checker: ${{ steps.filter.outputs.health_checker }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: filter
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python_backend=false
+          camera_service=false
+          health_checker=false
+
+          while IFS= read -r path; do
+            case "$path" in
+              api.py|control.py|db.py|requirements.txt|tests/*|axocare_api/*|axocare_agent/*|mcp_server/*|migrations/*)
+                python_backend=true
+                ;;
+            esac
+
+            case "$path" in
+              camera_service/*)
+                camera_service=true
+                ;;
+            esac
+
+            case "$path" in
+              health_checker/*)
+                health_checker=true
+                ;;
+            esac
+          done < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+
+          {
+            echo "python_backend=$python_backend"
+            echo "camera_service=$camera_service"
+            echo "health_checker=$health_checker"
+          } >> "$GITHUB_OUTPUT"
+
+  python-backend-tests:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.python_backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Python tests
+        run: pytest tests
+
+  camera-service-tests:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.camera_service == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: camera_service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: camera_service/go.mod
+
+      - name: Run camera service tests
+        run: go test ./...
+
+  health-checker-tests:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.health_checker == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: health_checker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: health_checker/go.mod
+
+      - name: Run health checker tests
+        run: go test ./...
