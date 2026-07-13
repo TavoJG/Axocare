@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from axocare_ai.train import train_model
 import db as axocare_db
 from mcp_server import tools
 
@@ -56,6 +57,7 @@ def test_empty_and_invalid_data_handling(tmp_path: Path) -> None:
     db_path = tmp_path / "empty.db"
     axocare_db.migrate(db_path)
     tools.configure_database(db_path)
+    tools.configure_models_dir(tmp_path / "models")
 
     assert tools.get_current_status() == {
         "data_available": False,
@@ -77,12 +79,33 @@ def test_empty_and_invalid_data_handling(tmp_path: Path) -> None:
 
 def test_prediction_is_explicitly_unavailable(tmp_path: Path) -> None:
     tools.configure_database(tmp_path / "unused.db")
+    tools.configure_models_dir(tmp_path / "models")
 
     assert tools.predict_temperature(15) == {
         "available": False,
         "horizon_minutes": 15,
-        "message": "Temperature prediction is unavailable because the local AI model has not been implemented and trained yet.",
+        "message": (
+            f"No trained temperature model is available for the 15-minute horizon at "
+            f"{tmp_path / 'models' / 'thermal_ridge_h15.json'}."
+        ),
     }
+
+
+def test_prediction_uses_trained_local_model(tmp_path: Path) -> None:
+    db_path = _seed_training_database(tmp_path)
+    models_dir = tmp_path / "models"
+    train_model(db_path, 15, output_dir=models_dir)
+
+    tools.configure_database(db_path)
+    tools.configure_models_dir(models_dir)
+    prediction = tools.predict_temperature(15)
+
+    assert prediction["available"] is True
+    assert prediction["horizon_minutes"] == 15
+    assert prediction["model_name"] == "thermal_ridge"
+    assert prediction["risk_level"] in {"low", "medium", "high"}
+    assert isinstance(prediction["predicted_temperature_c"], float)
+    assert "The model expects the aquarium" in prediction["explanation"]
 
 
 def test_server_registers_the_expected_tools() -> None:
@@ -97,6 +120,47 @@ def test_server_registers_the_expected_tools() -> None:
         "get_relay_events",
         "predict_temperature",
         "explain_temperature_trend",
+    }
+
+
+def test_server_main_accepts_models_dir(monkeypatch, tmp_path: Path) -> None:
+    pytest.importorskip("mcp")
+    from mcp_server import server
+
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "mcp_server.server",
+            "--db",
+            str(tmp_path / "axocare.db"),
+            "--models-dir",
+            str(tmp_path / "models"),
+        ],
+    )
+    monkeypatch.setattr(
+        server.tools,
+        "configure_database",
+        lambda db_path: captured.setdefault("db_path", db_path),
+    )
+    monkeypatch.setattr(
+        server.tools,
+        "configure_models_dir",
+        lambda models_dir: captured.setdefault("models_dir", models_dir),
+    )
+    monkeypatch.setattr(
+        server.mcp,
+        "run",
+        lambda *, transport: captured.setdefault("transport", transport),
+    )
+
+    server.main()
+
+    assert captured == {
+        "db_path": str(tmp_path / "axocare.db"),
+        "models_dir": str(tmp_path / "models"),
+        "transport": "stdio",
     }
 
 
@@ -127,6 +191,42 @@ def _seed_database(tmp_path: Path) -> Path:
             (_sqlite_utc(now - timedelta(minutes=5)), 1, "temperature_above_threshold", 19.4),
         )
         conn.commit()
+    return db_path
+
+
+def _seed_training_database(tmp_path: Path) -> Path:
+    db_path = tmp_path / "training.db"
+    axocare_db.migrate(db_path)
+    now = datetime.now(timezone.utc) - timedelta(minutes=120)
+
+    for minute in range(96):
+        room_temperature = None if minute < 45 else 24.0 + ((minute % 6) * 0.08)
+        humidity = None if minute < 45 else 47.0 + ((minute % 5) * 0.5)
+        cooling_on = minute % 18 >= 12
+        water_temp = 18.3 + minute * 0.012 + (0.1 if cooling_on else 0.0) - (0.18 if cooling_on else 0.0)
+        with axocare_db.connect(db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO temperature_readings (
+                    recorded_at,
+                    temperature_c,
+                    relay_on,
+                    room_temperature,
+                    aht20_humidity_percent,
+                    bmp280_pressure_hpa
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    _sqlite_utc(now + timedelta(minutes=minute)),
+                    round(water_temp, 3),
+                    int(cooling_on),
+                    room_temperature,
+                    humidity,
+                    1012.0 + ((minute % 4) * 0.3),
+                ),
+            )
+            conn.commit()
     return db_path
 
 

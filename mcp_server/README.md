@@ -8,7 +8,7 @@ telemetry without granting them direct SQLite access.
 Install the project dependencies, then configure an MCP client to start:
 
 ```bash
-python -m mcp_server.server --db ./axocare.db
+python -m mcp_server.server --db ./axocare.db --models-dir ./axocare_ai/models
 ```
 
 For example, an MCP client configuration can use:
@@ -18,7 +18,14 @@ For example, an MCP client configuration can use:
   "mcpServers": {
     "axocare": {
       "command": "python",
-      "args": ["-m", "mcp_server.server", "--db", "/absolute/path/to/axocare.db"]
+      "args": [
+        "-m",
+        "mcp_server.server",
+        "--db",
+        "/absolute/path/to/axocare.db",
+        "--models-dir",
+        "/absolute/path/to/axocare_ai/models"
+      ]
     }
   }
 }
@@ -37,5 +44,5 @@ unit template.
 - `get_temperature_summary(hours)` — 1 to 168 hours
 - `get_relay_events(hours)` — 1 to 168 hours
 - `explain_temperature_trend(minutes)` — 1 to 1,440 minutes
-- `predict_temperature(horizon_minutes)` — reports unavailable until the local
-  AI model is implemented and trained
+- `predict_temperature(horizon_minutes)` — 10, 15, or 30 minutes, using a
+  locally trained model in `axocare_ai/models/`
