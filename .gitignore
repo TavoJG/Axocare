@@ -8,3 +8,6 @@ config.toml
 
 # Go binary
 health_checker/dist
+
+# MacOS
+.DS_Store
